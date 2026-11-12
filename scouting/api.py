@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 
 from . import config
 
@@ -20,6 +21,28 @@ class ApiError(Exception):
     def __init__(self, status, message):
         super().__init__(f"HTTP {status}: {message}")
         self.status = status
+
+
+ALLOWED_HOST = urllib.parse.urlsplit(BASE).hostname
+MAX_RESPONSE = 200 * 1024 * 1024
+
+
+class _SameHostRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        u = urllib.parse.urlsplit(newurl)
+        if u.scheme != "https" or u.hostname != ALLOWED_HOST:
+            raise urllib.error.HTTPError(newurl, code, f"Redirección a host no permitido: {u.hostname}", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_opener = urllib.request.build_opener(_SameHostRedirect)
+
+
+def _read_capped(r, limit=MAX_RESPONSE):
+    body = r.read(limit + 1)
+    if len(body) > limit:
+        raise ApiError(0, "respuesta demasiado grande")
+    return body
 
 
 class Client:
@@ -51,10 +74,13 @@ class Client:
             self._throttle()
             req = urllib.request.Request(url, headers=headers)
             try:
-                with urllib.request.urlopen(req, timeout=timeout) as r:
-                    body = r.read()
+                with _opener.open(req, timeout=timeout) as r:
+                    body = _read_capped(r)
                     if r.headers.get("Content-Encoding") == "gzip":
-                        body = gzip.decompress(body)
+                        d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+                        body = d.decompress(body, MAX_RESPONSE + 1)
+                        if len(body) > MAX_RESPONSE or d.unconsumed_tail:
+                            raise ApiError(0, "respuesta demasiado grande")
                     return body
             except urllib.error.HTTPError as e:
                 msg = e.read()[:300].decode("utf-8", "replace")

@@ -1,7 +1,8 @@
 // Módulo ÚNICO de mapa: minimapa, partidas e informe usan este mismo render.
 // Capas: heat (calor), points (●), crosses (✕), cells (cuadrícula con valor), paths (recorridos).
 import { api } from './api.js';
-import { el, downloadBlob } from './util.js';
+import { el, downloadBlob, cssVar } from './util.js';
+import { SIDE_COLORS } from './charts.js';
 
 let mapInfoPromise = null;
 
@@ -24,7 +25,9 @@ export function loadMapInfo() {
 }
 export function resetMapInfo() { mapInfoPromise = null; }
 
-export const COLORS = { t0: '#e0a030', t1: '#4d84ff', us: '#2fa86c', them: '#d9433b', neutral: '#555' };
+// Mismos tokens que las gráficas (app.css :root); antes había dos verdes/rojos distintos.
+export const COLORS = SIDE_COLORS;
+const ink = () => cssVar('--mapink', '#000');
 
 export class MapView {
   constructor(container, opts = {}) {
@@ -33,7 +36,7 @@ export class MapView {
     this.layers = [];
     this.rotate = false;
     this.box = el('div', { class: 'mapbox' });
-    this.canvas = el('canvas', { width: this.size, height: this.size });
+    this.canvas = el('canvas', { width: this.size, height: this.size, role: 'img', 'aria-label': opts.label || 'Minimapa' });
     this.msg = el('div', { class: 'map-msg', hidden: true });
     this.box.append(this.canvas, this.msg);
     container.append(this.box);
@@ -64,7 +67,7 @@ export class MapView {
     const S = this.size;
     ctx.clearRect(0, 0, S, S);
     // la imagen es negra semitransparente: siempre sobre fondo claro
-    ctx.fillStyle = '#ecebe6';
+    ctx.fillStyle = cssVar('--mapbg', '#ecebe6');
     ctx.fillRect(0, 0, S, S);
     if (this.info.img) {
       ctx.save();
@@ -94,7 +97,7 @@ export class MapView {
     const S = this.size, g = this.grid, step = S / g;
     ctx.save();
     ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1;
-    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.font = '11px system-ui';
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.font = '12px system-ui';
     for (let i = 1; i < g; i++) {
       ctx.beginPath(); ctx.moveTo(i * step, 0); ctx.lineTo(i * step, S); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, i * step); ctx.lineTo(S, i * step); ctx.stroke();
@@ -170,12 +173,12 @@ export class MapView {
 
   drawMarkers(ctx, L) {
     ctx.save();
-    ctx.font = 'bold 11px system-ui';
+    ctx.font = 'bold 12px system-ui';
     for (const m of L.points) {
       const [x, y] = this.toPx(m[0], m[1]);
-      ctx.fillStyle = m[3] || '#000';
+      ctx.fillStyle = m[3] || ink();
       ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#000'; ctx.fillText(m[2] || '', x + 8, y + 4);
+      ctx.fillStyle = ink(); ctx.fillText(m[2] || '', x + 8, y + 4);
     }
     ctx.restore();
   }
@@ -208,7 +211,7 @@ export class MapView {
       ctx.fillStyle = L.diverging ? (v >= 0 ? hexA(COLORS.us, a) : hexA(COLORS.them, a)) : hexA(L.color || COLORS.us, a);
       ctx.fillRect(col * step + 1, row * step + 1, step - 2, step - 2);
       if (L.labels) {
-        ctx.fillStyle = '#000';
+        ctx.fillStyle = ink();
         ctx.fillText((L.diverging && v > 0 ? '+' : '') + v, col * step + step / 2, row * step + step / 2);
       }
     }

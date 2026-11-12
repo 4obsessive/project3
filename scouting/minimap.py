@@ -27,8 +27,10 @@ def load_calibration():
 
 
 def save_calibration(cal):
-    with open(CALIB_PATH, "w", encoding="utf-8") as f:
+    tmp = CALIB_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(cal, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, CALIB_PATH)
 
 
 def official_from_asset(asset):

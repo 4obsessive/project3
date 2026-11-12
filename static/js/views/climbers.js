@@ -1,5 +1,5 @@
 import { api, getPlayers } from '../api.js';
-import { el, fmt, dataTable, store, spinner } from '../util.js';
+import { el, fmt, dataTable, store, spinner, errorBox } from '../util.js';
 import { openProfile } from './profile.js';
 
 export async function render(root, ctx) {
@@ -12,7 +12,9 @@ export async function render(root, ctx) {
 
   async function load() {
     body.innerHTML = ''; body.append(spinner());
-    const [c, players] = await Promise.all([api.get(`/api/climbers?days=${days}`), getPlayers()]);
+    let c, players;
+    try { [c, players] = await Promise.all([api.get(`/api/climbers?days=${days}`), getPlayers()]); }
+    catch (e) { body.innerHTML = ''; body.append(errorBox(e.message, load)); return; }
     const byId = Object.fromEntries(players.map(p => [p.id, p]));
     body.innerHTML = '';
     if (c.warning) body.append(el('div', { class: 'note warning block' }, c.warning));

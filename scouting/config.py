@@ -48,6 +48,10 @@ def save(cfg, _locked=False):
         tmp = CONFIG_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
         os.replace(tmp, CONFIG_PATH)
 
     if _locked:

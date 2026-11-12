@@ -1,22 +1,21 @@
 // Panel lateral de perfil: stats, top héroes, cuentas, tendencias, dúos y campos manuales.
 import { api, invalidatePlayers } from '../api.js';
-import { el, fmt, dataTable, toast, spinner } from '../util.js';
+import { el, fmt, dataTable, toast, spinner, errorBox, cssVar } from '../util.js';
 import { lines } from '../charts.js';
 
 const STATUSES = ['pendiente', 'en seguimiento', 'contactado', 'en prueba', 'fichado', 'descartado'];
 
 export async function openProfile(pid, ctx) {
-  const d = document.getElementById('drawer');
-  d.hidden = false;
+  const d = openDrawer();
   d.innerHTML = '';
-  d.append(spinner('Cargando perfil…'));
+  d.append(head('Perfil'), spinner('Cargando perfil…'));
+  d.querySelector('.close').focus();
   let p;
-  try { p = await api.get(`/api/players/${pid}?duos=0`); } catch (e) { d.innerHTML = ''; d.append(closeBtn(), el('p', {}, e.message)); return; }
+  try { p = await api.get(`/api/players/${pid}?duos=0`); } catch (e) { d.innerHTML = ''; d.append(head('Perfil'), errorBox(e.message, () => openProfile(pid, ctx))); d.querySelector('.close').focus(); return; }
   d.innerHTML = '';
   const s = p.stats;
   d.append(
-    closeBtn(),
-    el('h2', {}, p.name),
+    head(p.name),
     el('div', { class: 'row muted' },
       [p.rank ? `#${p.rank} temporada actual` : 'fuera de la leaderboard actual',
         ...Object.entries(p.ranks).filter(([k]) => +k !== ctx.status?.current_leaderboard_id).map(([k, v]) => `#${v} en ${(ctx.status?.season_names || {})[k] || k}`),
@@ -25,7 +24,7 @@ export async function openProfile(pid, ctx) {
     el('div', { class: 'kv', style: { margin: '12px 0' } },
       kv(fmt.int(s.matches), 'partidas (30 d)'), kv(fmt.pct(s.winrate), 'winrate'), kv(fmt.dec(s.kd), 'KD'), kv(fmt.dec(s.kda), 'KDA'),
       kv(fmt.int(s.damage_per_match), 'daño / partida'), kv(fmt.int(s.obj_damage_per_min), 'daño a objetivos / min'),
-      kv(p.reliability, 'fiabilidad'), kv(el('span', { style: { fontSize: '12px', fontWeight: 400 } }, p.role_text || '–'), 'roles')),
+      kv(p.reliability, 'fiabilidad'), kv(el('span', { class: 'roles' }, p.role_text || '–'), 'roles')),
   );
 
   // top 5 héroes
@@ -41,18 +40,19 @@ export async function openProfile(pid, ctx) {
 
   // campos manuales
   const form = {};
-  const field = (key, input) => { form[key] = input; return input; };
+  const field = (key, input) => { form[key] = input; input.id = 'pf-' + key; return input; };
+  const lab = (key, text) => el('label', { for: 'pf-' + key }, text);
   const m = p.manual;
   d.append(el('h3', { style: { marginTop: '16px' } }, 'Contacto y seguimiento (manual)'),
     el('p', { class: 'muted small' }, 'Solo lo que el jugador hace público. Nunca se guarda la edad exacta. Estos campos no se tocan al actualizar.'),
     el('div', { class: 'form-grid' },
-      'Twitter/X', field('twitter', el('input', { value: m.twitter || '' })),
-      'Twitch', field('twitch', el('input', { value: m.twitch || '' })),
-      'Discord', field('discord', el('input', { value: m.discord || '' })),
-      'Mayor de edad', field('adult', el('select', {}, ['desconocido', 'sí', 'no'].map(v => el('option', { selected: m.adult === v }, v)))),
-      'Estado', field('status', el('select', {}, STATUSES.map(v => el('option', { selected: m.status === v }, v)))),
-      'Equipo (manual)', field('team', el('input', { value: m.team || '', placeholder: p.team_source === 'equipos.txt' ? `${p.team} (equipos.txt)` : '' })),
-      'Notas', field('notes', el('textarea', {}, m.notes || '')),
+      lab('twitter', 'Twitter/X'), field('twitter', el('input', { value: m.twitter || '' })),
+      lab('twitch', 'Twitch'), field('twitch', el('input', { value: m.twitch || '' })),
+      lab('discord', 'Discord'), field('discord', el('input', { value: m.discord || '' })),
+      lab('adult', 'Mayor de edad'), field('adult', el('select', {}, ['desconocido', 'sí', 'no'].map(v => el('option', { selected: m.adult === v }, v)))),
+      lab('status', 'Estado'), field('status', el('select', {}, STATUSES.map(v => el('option', { selected: m.status === v }, v)))),
+      lab('team', 'Equipo (manual)'), field('team', el('input', { value: m.team || '', placeholder: p.team_source === 'equipos.txt' ? `${p.team} (equipos.txt)` : '' })),
+      lab('notes', 'Notas'), field('notes', el('textarea', {}, m.notes || '')),
     ),
     el('div', { class: 'row', style: { marginTop: '8px' } }, el('button', { class: 'primary', onclick: async () => {
       const body = {}; for (const [k, i] of Object.entries(form)) body[k] = i.value;
@@ -72,7 +72,7 @@ export async function openProfile(pid, ctx) {
     ], list));
   };
   renderAccounts(p.accounts);
-  const linkInput = el('input', { placeholder: 'ID, [U:1:N], steam64 o URL de perfil', style: { minWidth: '260px' } });
+  const linkInput = el('input', { placeholder: 'ID, [U:1:N], steam64 o URL de perfil', 'aria-label': 'Cuenta a enlazar', style: { minWidth: '260px' } });
   d.append(el('h3', { style: { marginTop: '16px' } }, 'Cuentas'), el('p', { class: 'muted small' }, 'Las stats de todas las cuentas enlazadas se suman.'), accBox,
     el('div', { class: 'row', style: { marginTop: '6px' } }, linkInput, el('button', { onclick: async () => {
       try { await api.post(`/api/players/${pid}/link`, { account: linkInput.value }); invalidatePlayers(); toast('Cuenta enlazada (sus stats llegan en la próxima actualización si es nueva)'); openProfile(pid, ctx); } catch (e) { toast(e.message, true); }
@@ -82,11 +82,11 @@ export async function openProfile(pid, ctx) {
   const tr = p.trends;
   d.append(el('h3', { style: { marginTop: '16px' } }, 'Tendencias'),
     el('div', { class: 'chart-title' }, 'Posición en la leaderboard (temporada actual)'),
-    lines({ series: [{ name: 'rank', points: tr.rank.map(r => [r.t, r.rank]), color: '#d6a548' }], invert: true, yfmt: v => '#' + Math.round(v) }),
+    lines({ series: [{ name: 'rank', points: tr.rank.map(r => [r.t, r.rank]), color: cssVar('--c1') }], invert: true, label: 'Posición en la leaderboard', yfmt: v => '#' + Math.round(v) }),
     el('div', { class: 'chart-title' }, 'KDA (ventana de 30 días en cada actualización)'),
-    lines({ series: [{ name: 'KDA', points: tr.stats.map(r => [r.t, r.kda]), color: '#4d84ff' }] }),
+    lines({ series: [{ name: 'KDA', points: tr.stats.map(r => [r.t, r.kda]), color: cssVar('--c2') }], label: 'KDA' }),
     el('div', { class: 'chart-title' }, 'Winrate'),
-    lines({ series: [{ name: 'WR', points: tr.stats.map(r => [r.t, r.winrate == null ? null : r.winrate * 100]), color: '#3fbf7f' }], yfmt: v => Math.round(v) + '%' }));
+    lines({ series: [{ name: 'WR', points: tr.stats.map(r => [r.t, r.winrate == null ? null : r.winrate * 100]), color: cssVar('--c3') }], label: 'Winrate', yfmt: v => Math.round(v) + '%' }));
 
   // dúos (petición aparte: tarda un poco)
   const duoBox = el('div', {}, spinner('Buscando compañeros de grupo…'));
@@ -96,7 +96,7 @@ export async function openProfile(pid, ctx) {
     duoBox.innerHTML = '';
     const du = full.duos;
     if (du.error) { duoBox.append(el('p', { class: 'muted' }, du.error)); return; }
-    const nameCell = r => r.player_id ? el('a', { href: '#', onclick: e => { e.preventDefault(); openProfile(r.player_id, ctx); } }, r.name || r.account_id) : (r.name || String(r.account_id));
+    const nameCell = r => r.player_id ? el('button', { type: 'button', class: 'linkbtn', onclick: () => openProfile(r.player_id, ctx) }, r.name || String(r.account_id)) : (r.name || String(r.account_id));
     duoBox.append(el('p', { class: 'muted small' }, du.note),
       du.duos.length ? dataTable([
         { key: 'name', label: 'Compañero', render: nameCell }, { key: 'duo_matches', label: 'Partidas en dúo' },
@@ -111,7 +111,41 @@ export async function openProfile(pid, ctx) {
 }
 
 function kv(v, label) { return el('div', {}, el('b', {}, v), el('span', {}, label)); }
-function closeBtn() {
-  return el('button', { class: 'close', onclick: () => { document.getElementById('drawer').hidden = true; } }, '✕');
+function head(title) {
+  return el('div', { class: 'drawer-head' }, el('h2', { id: 'drawer-title' }, title),
+    el('button', { type: 'button', class: 'close', 'aria-label': 'Cerrar perfil', onclick: () => closeDrawer() }, el('span', { 'aria-hidden': 'true' }, '✕')));
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('drawer').hidden = true; });
+
+// ---- diálogo: foco, Esc, fondo clicable
+let returnFocus = null;
+function openDrawer() {
+  const d = document.getElementById('drawer');
+  if (d.hidden) returnFocus = document.activeElement;
+  d.setAttribute('aria-labelledby', 'drawer-title');
+  d.removeAttribute('aria-label');
+  d.hidden = false;
+  document.getElementById('backdrop').hidden = false;
+  return d;
+}
+export function closeDrawer(restore = true) {
+  const d = document.getElementById('drawer');
+  if (d.hidden) return;
+  d.hidden = true;
+  document.getElementById('backdrop').hidden = true;
+  if (restore && returnFocus && document.contains(returnFocus)) returnFocus.focus();
+  returnFocus = null;
+}
+document.getElementById('backdrop')?.addEventListener('click', () => closeDrawer());
+document.addEventListener('keydown', e => {
+  const d = document.getElementById('drawer');
+  if (d.hidden) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeDrawer(); return; }
+  if (e.key !== 'Tab') return;
+  // trampa de foco dentro del diálogo
+  const f = [...d.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')].filter(x => x.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (!d.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});

@@ -8,7 +8,7 @@ export async function render(root, ctx) {
   root.innerHTML = '';
   const byId = Object.fromEntries(players.map(p => [p.id, p]));
   const free = players.filter(p => !p.team);
-  const addInput = el('input', { placeholder: 'ID / [U:1:N] / steam64 / URL', style: { minWidth: '240px' } });
+  const addInput = el('input', { 'aria-label': 'Cuenta del jugador a añadir', placeholder: 'ID / [U:1:N] / steam64 / URL', style: { minWidth: '240px' } });
   root.append(el('div', { class: 'panel row' },
     el('button', { onclick: async () => {
       try { const r = await api.post('/api/teams/reload'); invalidatePlayers(); toast(`equipos.txt: ${r.lines} líneas` + (r.errors.length ? ` · ${r.errors.length} errores (ver terminal)` : '')); root.innerHTML = ''; render(root, ctx); } catch (e) { toast(e.message, true); }

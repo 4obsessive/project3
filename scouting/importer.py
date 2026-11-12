@@ -4,6 +4,7 @@ No se conoce su esquema exacto, así que se inspecciona: se buscan tablas con un
 (account_id / steam_id / id) y columnas de campos manuales (twitter, twitch, discord, estado/status,
 notas/notes, equipo/team, mayor de edad), y tablas de snapshots (rank + cuenta + fecha).
 Nunca se importa una edad exacta."""
+import pathlib
 import sqlite3
 
 from . import players, summary
@@ -23,12 +24,16 @@ FIELD_ALIASES = {
 STATUS_MAP = {s.replace(" ", ""): s for s in players.STATUSES}
 
 
+def _ro_uri(path):
+    return pathlib.Path(path).resolve().as_uri() + "?mode=ro"
+
+
 def _cols(con, table):
     return [r[1] for r in con.execute(f'PRAGMA table_info("{table}")')]
 
 
 def inspect(path):
-    src = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    src = sqlite3.connect(_ro_uri(path), uri=True)
     tables = [r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")]
     out = {}
     for t in tables:
@@ -49,7 +54,7 @@ def _adult(v):
 
 
 def import_db(con, path, dry_run=False):
-    src = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    src = sqlite3.connect(_ro_uri(path), uri=True)
     src.row_factory = sqlite3.Row
     report = {"manual": 0, "snapshots": 0, "entries": 0, "tables": {}, "skipped": []}
     tables = [r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")]

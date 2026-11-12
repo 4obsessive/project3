@@ -14,26 +14,26 @@ export function renderBlock(b) {
       return el('div', { class: 'unavailable block' }, el('b', {}, `No disponible — ${b.title}: `), b.reason);
     case 'table':
       return el('div', { class: 'block' }, title(b.title, b.n), b.note ? el('div', { class: 'muted small' }, b.note) : null,
-        b.rows.length ? dataTable(b.columns.map(c => ({ key: c.key, label: c.label, fmt: c.fmt, wrap: c.key === 'texto' })), b.rows) : el('div', { class: 'muted small' }, 'Sin datos'));
+        dataTable(b.columns.map(c => ({ key: c.key, label: c.label, fmt: c.fmt, wrap: c.key === 'texto' })), b.rows, { label: b.title, emptyText: 'Sin datos' }));
     case 'bars':
-      return el('div', { class: 'block' }, title(b.title, b.n), bars({ labels: b.labels, series: b.series, unit: b.unit || '' }));
+      return el('div', { class: 'block' }, title(b.title, b.n), bars({ labels: b.labels, series: b.series, unit: b.unit || '', label: b.title }));
     case 'histogram':
-      return el('div', { class: 'block' }, title(b.title, b.n), histogram({ series: b.series, bin_s: b.bin_s || 60 }));
+      return el('div', { class: 'block' }, title(b.title, b.n), histogram({ series: b.series, bin_s: b.bin_s || 60, label: b.title }));
     case 'timeline':
-      return el('div', { class: 'block' }, title(b.title, b.n), timeline({ rows: b.rows }));
+      return el('div', { class: 'block' }, title(b.title, b.n), timeline({ rows: b.rows, label: b.title }));
     case 'map': {
       const box = el('div');
       const wrap = el('div', { class: 'block' }, title(b.title, b.n));
       const leg = [];
       const layers = b.layers.map(L => {
-        const color = SIDE_COLORS[L.side] || '#555';
+        const color = (L.side && SIDE_COLORS[L.side]) || SIDE_COLORS.neutral;
         if (L.kind !== 'cells') leg.push([color, L.name, L.kind === 'crosses' ? 'x' : null]);
         else leg.push([SIDE_COLORS.us, 'balance positivo'], [SIDE_COLORS.them, 'balance negativo']);
         return { ...L, color, radius: L.kind === 'points' ? 4 : 5 };
       });
       wrap.append(legend(leg), box);
       if (b.normalized) wrap.append(el('div', { class: 'muted small' }, 'Normalizado: base propia siempre abajo.'));
-      const map = new MapView(box, { size: 640, grid: b.grid || 0 });
+      const map = new MapView(box, { size: 640, grid: b.grid || 0, label: b.title ? `Mapa: ${b.title}` : 'Mapa' });
       map.setLayers(layers);
       wrap.append(el('button', { class: 'no-print', onclick: () => map.exportPNG((b.title || 'mapa').replace(/\W+/g, '_') + '.png') }, 'Exportar PNG'));
       return wrap;
