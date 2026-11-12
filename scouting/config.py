@@ -19,6 +19,8 @@ DEFAULTS = {
     "extra_leaderboard_ids": [1001],
     "update_interval_hours": 24,
     "stats_days": 30,
+    # Modo de partida de las stats: "ranked" (por defecto) o "ranked,unranked"
+    "stats_match_mode": "ranked",
     "api_key": "",
     "batch_size": 50,
     "host": "127.0.0.1",

@@ -3,6 +3,7 @@ import time
 
 from .. import metric, stats
 from ... import matches as M
+from ... import stats as S
 
 
 @metric("resumen", "Resumen de la muestra", order=10)
@@ -38,7 +39,8 @@ def resumen(ctx):
     blocks.append({
         "type": "bars", "title": "Winrate por lado", "unit": "%", "n": ctx.n,
         "labels": [f"{M.TEAM_NAMES[s]} ({by_side[s][0]} partidas)" for s in (0, 1)],
-        "series": [{"name": "Winrate", "side": "us", "values": [round(100 * by_side[s][1] / by_side[s][0]) if by_side[s][0] else None for s in (0, 1)]}],
+        "series": [{"name": "Winrate", "side": "us", "values": [round(100 * by_side[s][1] / by_side[s][0]) if by_side[s][0] else None for s in (0, 1)],
+                    "ci": [[round(100 * x) for x in S.wilson(by_side[s][1], by_side[s][0], S.Z90)] if by_side[s][0] else None for s in (0, 1)]}],
     })
     blocks.append({
         "type": "table", "title": "Partidas", "n": ctx.n,
@@ -49,8 +51,11 @@ def resumen(ctx):
     })
     for s in (0, 1):
         n, w = by_side[s]
-        if n >= 3 and by_side[1 - s][0] >= 3:
-            other = by_side[1 - s][1] / by_side[1 - s][0]
-            if w / n - other >= 0.25:
-                ctx.finding("pattern", f"Rinden mejor como {M.TEAM_NAMES[s]}: {w}/{n} victorias frente a {other:.0%} en el otro lado.", w, n)
+        on, ow = by_side[1 - s]
+        # solo si ambos lados tienen ≥5 partidas y los intervalos de Wilson al 80 % no se solapan
+        if n >= 5 and on >= 5:
+            a, b = S.wilson(w, n, S.Z80), S.wilson(ow, on, S.Z80)
+            if a[0] > b[1]:
+                ctx.finding("pattern", f"Rinden mejor como {M.TEAM_NAMES[s]}: {w}/{n} victorias frente a {ow}/{on} en el otro lado.", w, n,
+                            baseline=ow / on)
     return blocks

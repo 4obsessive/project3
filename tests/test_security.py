@@ -77,6 +77,22 @@ class HttpHardening(unittest.TestCase):
         c.close()
         return r, data
 
+    def test_fonts_served_as_woff2(self):
+        import glob
+        fonts = glob.glob(os.path.join(server.config.STATIC_DIR, "fonts", "*.woff2"))
+        self.assertTrue(fonts)
+        for fp in fonts:
+            r, data = self._req("GET", "/static/fonts/" + os.path.basename(fp))
+            self.assertEqual(r.status, 200)
+            self.assertEqual(r.getheader("Content-Type"), "font/woff2")
+            self.assertTrue(data.startswith(b"wOF2"))
+        self.assertTrue(glob.glob(os.path.join(server.config.STATIC_DIR, "fonts", "OFL-*.txt")))
+
+    def test_match_mode_validation(self):
+        server.validate_config({"stats_match_mode": "ranked,unranked"})
+        with self.assertRaises(server.HttpError):
+            server.validate_config({"stats_match_mode": "todo"})
+
     def test_bad_content_length(self):
         for cl in ("abc", "-5"):
             r, _ = self._req("POST", "/api/config", None, {"Content-Type": "application/json", "Content-Length": cl})

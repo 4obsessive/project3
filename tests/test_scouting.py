@@ -58,6 +58,8 @@ class Roles(unittest.TestCase):
 class FakeClient:
     def __init__(self):
         self.calls = []
+        self.modes = []
+        self.windows = []
         self.fail_stats_after = None
 
     def ranked_seasons(self):
@@ -80,13 +82,18 @@ class FakeClient:
 
     def ranks(self, ids):
         b = {111111: 20, 222222: 105, 444444: 90, 555555: 90}
-        return [{"account_id": a, "badge": b.get(a, 0)} for a in ids]
+        return [{"account_id": a, "badge": b.get(a, 0), "last_match": {"player_rank_final_flat_progress": 1000 + b.get(a, 0)}} for a in ids]
 
     def steam(self, ids):
         names = {444444: ("Otro", 5), 555555: ("Gamma", 50), 666666: ("Libre", 3), 777777: ("Libre2", 1)}
         return [{"account_id": a, "personaname": names.get(a, ("x", 0))[0], "matches_played_last_30d": names.get(a, ("x", 0))[1]} for a in ids]
 
-    def hero_stats(self, ids, min_ts):
+    def hero_stats(self, ids, min_ts, match_mode=None):
+        self.modes.append(match_mode)
+        if min_ts > time.time() - 8 * 86400:  # llamada de forma reciente (7 días)
+            self.calls.append(("stats7", tuple(ids)))
+            return [{"account_id": a, "hero_id": 15, "matches_played": 5, "wins": 4} for a in ids]
+        self.windows.append(min_ts)
         self.calls.append(("stats", tuple(ids)))
         if self.fail_stats_after is not None:
             if self.fail_stats_after <= 0:
@@ -144,7 +151,8 @@ class Flow(unittest.TestCase):
         self.assertIsNone(by["Beta"]["team"])
         self.assertEqual(by["Alfa"]["stats"]["matches"], 32)
         self.assertEqual(by["Alfa"]["roles"], ["Catcher"])
-        self.assertEqual(by["Alfa"]["reliability"], "Alta")
+        # 32 partidas: un intervalo de ±17pp no es fiabilidad «Alta»
+        self.assertEqual(by["Alfa"]["reliability"], "Baja")
         # jugador de equipo fuera de la leaderboard: dos cuentas en la misma línea = un jugador, stats sumadas
         libre = by["Libre"]
         self.assertEqual(len(libre["accounts"]), 2)

@@ -13,8 +13,23 @@ import urllib.request
 from . import config
 
 SOURCES = {"wiki": "https://cdn.deadlock.wiki/",
-           "api": "https://assets-bucket.deadlock-api.com/assets-api-res/images/"}
-MAX_SEGMENTS = {"wiki": 1, "api": 3}
+           "api": "https://assets-bucket.deadlock-api.com/assets-api-res/images/",
+           "steam": "https://avatars.steamstatic.com/"}
+MAX_SEGMENTS = {"wiki": 1, "api": 3, "steam": 1}
+# Avatares de Steam: exactamente un hash SHA-1 en hexadecimal con sufijo de tamaño opcional y .jpg
+_STEAM_NAME = re.compile(r"[0-9a-f]{40}(_medium|_full)?\.jpg\Z")
+_STEAM_PREFIX = SOURCES["steam"]
+
+
+def steam_avatar_path(url, size="_medium"):
+    """URL de avatar de Steam -> ruta del proxy local (/img/steam/<hash><size>.jpg), o None."""
+    if not isinstance(url, str) or not url.startswith(_STEAM_PREFIX):
+        return None
+    name = url[len(_STEAM_PREFIX):]
+    m = re.match(r"([0-9a-f]{40})(_medium|_full)?\.jpg\Z", name)
+    if not m:
+        return None
+    return "/img/steam/" + m.group(1) + size + ".jpg"
 CACHE_DIR = os.path.join(config.DATA_DIR, "cache", "img")
 MAX_BYTES = 5 * 1024 * 1024
 FAIL_TTL = 600
@@ -40,6 +55,8 @@ def safe_name(origin, name):
         if not _SEGMENT.match(p) or not p.strip("."):
             return None
     if not _EXT.search(parts[-1]):
+        return None
+    if origin == "steam" and not _STEAM_NAME.match(name):
         return None
     return name
 

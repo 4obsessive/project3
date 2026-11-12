@@ -12,12 +12,13 @@ from . import api as api_mod
 from . import config, db, players, summary, teams
 from .db import kv_get, kv_set, now
 
-STEPS = ["leaderboard", "teams", "stats", "names", "materialize"]
+STEPS = ["leaderboard", "teams", "stats", "names", "ranks", "materialize"]
 STEP_LABELS = {
     "leaderboard": "Descargando leaderboard",
     "teams": "Leyendo equipos.txt",
     "stats": "Descargando stats por héroe",
-    "names": "Nombres de Steam",
+    "names": "Nombres y avatares de Steam",
+    "ranks": "Rango (badge) de cada cuenta",
     "materialize": "Calculando resúmenes",
 }
 
@@ -136,6 +137,7 @@ class Updater:
         with con:
             kv_set(con, "hero_names", json.dumps(hn))
             kv_set(con, "hero_images", json.dumps({h["id"]: (h.get("images") or {}).get("icon_image_small_webp") for h in heroes if h["id"] in hn}))
+            kv_set(con, "hero_assets", json.dumps(hero_assets(heroes, hn)))
 
         lids = [cur_lid] + [int(x) for x in cfg.get("extra_leaderboard_ids") or [] if int(x) != cur_lid]
         for i, lid in enumerate(lids):
@@ -243,8 +245,21 @@ class Updater:
         sync_teams(con)
 
     def step_stats(self, con, started):
+        """Stats por héroe en la ventana [ahora - N días, ahora].
+
+        La ventana se calcula con la hora actual aunque el trabajo sea una reanudación: así el «30 d»
+        nunca acaba en el pasado. `started` solo sirve para saltar cuentas ya descargadas en este trabajo."""
         cfg = config.load()
-        min_ts = started - int(cfg["stats_days"]) * 86400
+        end = now()
+        days = int(cfg["stats_days"])
+        min_ts = end - days * 86400
+        min_7d = end - 7 * 86400
+        mode = cfg.get("stats_match_mode") or "ranked"
+        with con:
+            if not con.execute("SELECT 1 FROM stats_fetched WHERE fetched_at>=?", (started,)).fetchone():
+                kv_set(con, "stats_window_start", min_ts)
+            kv_set(con, "stats_window_end", end)
+            kv_set(con, "stats_match_mode", mode)
         all_ids = [r[0] for r in con.execute("SELECT account_id FROM accounts ORDER BY account_id")]
         done = {r[0] for r in con.execute("SELECT account_id FROM stats_fetched WHERE fetched_at>=?", (started,))}
         todo = [a for a in all_ids if a not in done]
@@ -253,33 +268,70 @@ class Updater:
         self._set(total=total, done=total - len(todo))
         for i in range(0, len(todo), n):
             batch = todo[i:i + n]
-            rows = self.client.hero_stats(batch, min_ts)
+            rows = self.client.hero_stats(batch, min_ts, match_mode=mode)
+            try:
+                rows7 = self.client.hero_stats(batch, min_7d, match_mode=mode)
+            except Exception as e:  # la forma reciente es un extra
+                print(f"[actualizador] sin stats de 7 días para un lote: {e}")
+                rows7 = None
             with con:
-                con.execute("DELETE FROM hero_stats WHERE account_id IN (%s)" % ",".join("?" * len(batch)), batch)
-                for r in rows:
-                    con.execute(
-                        "INSERT OR REPLACE INTO hero_stats VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (r["account_id"], r["hero_id"], r.get("matches_played"), r.get("wins"), r.get("kills"), r.get("deaths"),
-                         r.get("assists"), r.get("total_player_damage"), r.get("total_player_damage_taken"), r.get("total_boss_damage"),
-                         r.get("total_creep_damage"), r.get("obj_damage_per_min"), r.get("damage_per_min"), r.get("networth_per_min"),
-                         r.get("accuracy"), r.get("time_played"), r.get("last_played")),
-                    )
+                marks = ",".join("?" * len(batch))
+                con.execute("DELETE FROM hero_stats WHERE account_id IN (%s)" % marks, batch)
+                db.insert_hero_stats(con, rows)
+                if rows7 is not None:
+                    con.execute("DELETE FROM hero_stats_7d WHERE account_id IN (%s)" % marks, batch)
+                    con.executemany("INSERT OR REPLACE INTO hero_stats_7d VALUES(?,?,?,?)",
+                                    [(r["account_id"], r["hero_id"], r.get("matches_played"), r.get("wins")) for r in rows7])
                 con.executemany("INSERT OR REPLACE INTO stats_fetched VALUES(?,?)", [(a, started) for a in batch])
             self._set(done=total - len(todo) + i + len(batch), message=f"{total - len(todo) + i + len(batch)}/{total} cuentas")
+        self._population_baselines(con, min_ts)
+
+    def _population_baselines(self, con, min_ts):
+        """Base por héroe de toda la población (alto rango) para héroes con pocas partidas propias."""
+        fn = getattr(self.client, "population_hero_stats", None)
+        if fn is None:
+            return
+        try:
+            rows = fn(min_ts)
+        except Exception as e:
+            print(f"[actualizador] sin base de población por héroe: {e}")
+            return
+        out = {}
+        for r in rows or []:
+            hid = r.get("hero_id")
+            k, d, a = r.get("total_kills"), r.get("total_deaths"), r.get("total_assists")
+            if hid is None or k is None or d is None or a is None:
+                continue
+            out[str(hid)] = {"kda": (k + a) / max(d, 1)}
+        with con:
+            kv_set(con, "hero_baselines_pop", json.dumps(out))
 
     def step_names(self, con, started):
-        ids = [r[0] for r in con.execute(
-            "SELECT a.account_id FROM accounts a JOIN players p ON p.id=a.player_id "
-            "WHERE a.steam_name IS NULL AND (a.steam_checked IS NULL OR a.steam_checked < ?) "
-            "AND (p.display_name IS NULL OR a.source<>'leaderboard')", (started - 7 * 86400,))]
-        self._set(total=len(ids), done=0)
-        for i in range(0, len(ids), 100):
-            batch = ids[i:i + 100]
-            got = {s["account_id"]: s.get("personaname") for s in self.client.steam(batch)}
+        """Perfiles de Steam (nombre, avatar, país) de todas las cuentas seguidas, también las de la
+        leaderboard. Caducan a los 7 días."""
+        fetch_steam_profiles(con, self.client, [r[0] for r in con.execute("SELECT account_id FROM accounts")],
+                             progress=lambda d, t: self._set(done=d, total=t))
+
+    def step_ranks(self, con, started):
+        """Badge y progreso continuo de cada cuenta seguida: una fila por cuenta y actualización."""
+        ids = [r[0] for r in con.execute("SELECT account_id FROM accounts ORDER BY account_id")]
+        have = {r[0] for r in con.execute("SELECT account_id FROM badge_history WHERE taken_at=?", (started,))}
+        todo = [a for a in ids if a not in have]
+        self._set(total=len(ids), done=len(ids) - len(todo))
+        for i in range(0, len(todo), 1000):
+            batch = todo[i:i + 1000]
+            rows = self.client.ranks(batch)
             with con:
-                for a in batch:
-                    con.execute("UPDATE accounts SET steam_name=?, steam_checked=? WHERE account_id=?", (got.get(a), now(), a))
-            self._set(done=i + len(batch))
+                for r in rows:
+                    aid = r.get("account_id")
+                    if aid is None:
+                        continue
+                    lm = r.get("last_match") or {}
+                    flat = lm.get("player_rank_final_flat_progress") if isinstance(lm, dict) else None
+                    con.execute("INSERT OR REPLACE INTO badge_history VALUES(?,?,?,?)", (aid, started, r.get("badge"), flat))
+                    if r.get("badge"):
+                        con.execute("UPDATE accounts SET badge=? WHERE account_id=?", (r.get("badge"), aid))
+            self._set(done=len(ids) - len(todo) + i + len(batch))
 
     def step_materialize(self, con, started):
         n = summary.materialize(con)
@@ -293,6 +345,52 @@ class Updater:
                     (s["id"], started, st["matches"], st["wins"], st["kills"], st["deaths"], st["assists"], s.get("rank")),
                 )
         self._set(done=n, total=n)
+
+
+def hero_assets(heroes, selectable):
+    """{hero_id: {card, vertical, bg, color}} con las URLs de la API de assets (se sirven por /img/api/)."""
+    out = {}
+    for h in heroes:
+        if h.get("id") not in selectable:
+            continue
+        im = h.get("images") or {}
+        col = (h.get("colors") or {}).get("ui")
+        if isinstance(col, (list, tuple)) and len(col) >= 3 and all(isinstance(c, (int, float)) for c in col[:3]):
+            col = "#%02x%02x%02x" % tuple(max(0, min(255, int(c))) for c in col[:3])
+        else:
+            col = None
+        out[h["id"]] = {"card": im.get("icon_hero_card_webp"), "vertical": im.get("top_bar_vertical_image_webp"),
+                        "bg": im.get("background_image_webp"), "color": col}
+    return out
+
+
+STEAM_TTL = 7 * 86400
+
+
+def fetch_steam_profiles(con, client, account_ids, ttl=STEAM_TTL, progress=None):
+    """Rellena steam_profiles (y accounts.steam_name) para las cuentas sin perfil reciente."""
+    ids = sorted({int(a) for a in account_ids if a})
+    if not ids:
+        return 0
+    fresh = set()
+    for i in range(0, len(ids), 500):
+        part = ids[i:i + 500]
+        fresh |= {r[0] for r in con.execute("SELECT account_id FROM steam_profiles WHERE fetched_at>=? AND account_id IN (%s)" % ",".join("?" * len(part)),
+                                            [now() - ttl] + part)}
+    todo = [a for a in ids if a not in fresh]
+    for i in range(0, len(todo), 100):
+        batch = todo[i:i + 100]
+        got = {s["account_id"]: s for s in client.steam(batch) if s.get("account_id") is not None}
+        with con:
+            for a in batch:
+                s = got.get(a) or {}
+                con.execute("INSERT OR REPLACE INTO steam_profiles VALUES(?,?,?,?,?)",
+                            (a, s.get("personaname"), s.get("avatar") or s.get("avatarmedium"), s.get("countrycode"), now()))
+                if s.get("personaname"):
+                    con.execute("UPDATE accounts SET steam_name=?, steam_checked=? WHERE account_id=?", (s.get("personaname"), now(), a))
+        if progress:
+            progress(i + len(batch), len(todo))
+    return len(todo)
 
 
 def _key(e):

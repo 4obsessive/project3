@@ -20,6 +20,7 @@ from .ids import to_account_id
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("image/avif", ".avif")
 mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("font/woff2", ".woff2")
 
 MAX_BODY = 50 * 1024 * 1024
 CSP = ("default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
@@ -57,6 +58,9 @@ def _is_int(v):
     return isinstance(v, int) and not isinstance(v, bool)
 
 
+MATCH_MODES = ("ranked", "ranked,unranked")
+
+
 def validate_config(changes):
     """Valida los cambios de /api/config; lanza HttpError(400) si algo no cuadra."""
     if "update_interval_hours" in changes:
@@ -73,6 +77,9 @@ def validate_config(changes):
         v = changes["extra_leaderboard_ids"]
         if not isinstance(v, list) or not all(_is_int(x) for x in v):
             raise HttpError(400, "extra_leaderboard_ids debe ser una lista de enteros")
+    if "stats_match_mode" in changes:
+        if changes["stats_match_mode"] not in MATCH_MODES:
+            raise HttpError(400, "stats_match_mode debe ser " + " o ".join(f"«{m}»" for m in MATCH_MODES))
     if "api_key" in changes:
         v = changes["api_key"]
         if not isinstance(v, str) or len(v) > 200:
@@ -97,6 +104,7 @@ class App:
         r("POST", r"/api/players/add", self.player_add)
         r("GET", r"/api/heroes", self.heroes)
         r("GET", r"/api/climbers", self.climbers)
+        r("GET", r"/api/ranks", self.ranks)
         r("GET", r"/api/teams", self.teams)
         r("POST", r"/api/teams/reload", self.teams_reload)
         r("GET", r"/api/teams/recent-matches", self.team_recent)
@@ -139,7 +147,15 @@ class App:
         }
         s["current_leaderboard_id"] = analysis.current_lid(con)
         s["season_names"] = json.loads(kv_get(con, "season_names") or "{}")
-        s["region"] = config.load()["region"]
+        cfg = config.load()
+        s["region"] = cfg["region"]
+        s["stats_window"] = {
+            "start": int(kv_get(con, "stats_window_start", 0) or 0) or None,
+            "end": int(kv_get(con, "stats_window_end", 0) or 0) or None,
+            "match_mode": kv_get(con, "stats_match_mode") or None,
+            "days": cfg["stats_days"],
+            "configured_mode": cfg.get("stats_match_mode") or "ranked",
+        }
         return s
 
     def update_now(self, req):
@@ -192,17 +208,12 @@ class App:
             with con:
                 pid = players.create_player(con, aid, (body.get("name") or "").strip() or None, "manual")
             try:
-                for s in self.client.steam([aid]):
-                    with con:
-                        con.execute("UPDATE accounts SET steam_name=? WHERE account_id=?", (s.get("personaname"), aid))
-                stats = self.client.hero_stats([aid], int(__import__("time").time()) - int(config.load()["stats_days"]) * 86400)
+                updater_mod.fetch_steam_profiles(con, self.client, [aid])
+                cfg = config.load()
+                stats = self.client.hero_stats([aid], db.now() - int(cfg["stats_days"]) * 86400,
+                                               match_mode=cfg.get("stats_match_mode") or "ranked")
                 with con:
-                    for r in stats:
-                        con.execute("INSERT OR REPLACE INTO hero_stats VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                    (r["account_id"], r["hero_id"], r.get("matches_played"), r.get("wins"), r.get("kills"), r.get("deaths"),
-                                     r.get("assists"), r.get("total_player_damage"), r.get("total_player_damage_taken"), r.get("total_boss_damage"),
-                                     r.get("total_creep_damage"), r.get("obj_damage_per_min"), r.get("damage_per_min"), r.get("networth_per_min"),
-                                     r.get("accuracy"), r.get("time_played"), r.get("last_played")))
+                    db.insert_hero_stats(con, stats)
             except ApiError as e:
                 print(f"[api] no se pudieron bajar datos de {aid}: {e}")
             summary.materialize(con, [pid])
@@ -212,20 +223,45 @@ class App:
         con = self.con()
         names = json.loads(kv_get(con, "hero_names") or "{}")
         imgs = json.loads(kv_get(con, "hero_images") or "{}")
+        assets = json.loads(kv_get(con, "hero_assets") or "{}")
         if not names:
             try:
                 hs = self.client.heroes()
                 names = {str(h["id"]): h["name"] for h in hs if h.get("player_selectable") and not h.get("disabled")}
                 imgs = {str(h["id"]): (h.get("images") or {}).get("icon_image_small_webp") for h in hs}
+                assets = {str(k): v for k, v in updater_mod.hero_assets(hs, {int(k) for k in names}).items()}
             except ApiError:
                 pass
-        return [{"id": int(k), "name": v, "image": _api_image_path(imgs.get(k)),
-                 "wiki_image": "/img/wiki/" + _wiki_hero_file(v)}
-                for k, v in sorted(names.items(), key=lambda kv: kv[1])]
+        out = []
+        for k, v in sorted(names.items(), key=lambda kv: kv[1]):
+            a = assets.get(k) or {}
+            out.append({"id": int(k), "name": v, "image": _api_image_path(imgs.get(k)),
+                        "wiki_image": "/img/wiki/" + _wiki_hero_file(v),
+                        "card": _api_image_path(a.get("card")), "vertical": _api_image_path(a.get("vertical")),
+                        "bg": _api_image_path(a.get("bg")),
+                        "color": a.get("color") if isinstance(a.get("color"), str) and re.fullmatch(r"#[0-9a-f]{6}", a.get("color") or "") else None})
+        return out
+
+    def ranks(self, req):
+        """Nombres e imágenes de los rangos (tier = badge // 10, subrank = badge % 10)."""
+        try:
+            data = self.client.rank_assets()
+        except (ApiError, AttributeError):
+            return []
+        out = []
+        for r in data or []:
+            im = r.get("images") or {}
+            out.append({"tier": r.get("tier"), "name": r.get("name"),
+                        "color": r.get("color") if re.fullmatch(r"#[0-9A-Fa-f]{6}", str(r.get("color") or "")) else None,
+                        "image": _api_image_path(im.get("small_webp") or im.get("large_webp")),
+                        "subranks": {str(i): _api_image_path(im.get(f"small_subrank{i}_webp") or im.get(f"subrank{i}_webp"))
+                                     for i in range(1, 7) if im.get(f"small_subrank{i}_webp") or im.get(f"subrank{i}_webp")}})
+        return out
 
     def climbers(self, req):
         days = _qint(req, "days", "7")
-        return analysis.climbers(self.con(), days)
+        metric = req.query.get("metric", ["rel"])[0]
+        return analysis.climbers(self.con(), days, "pos" if metric == "pos" else "rel")
 
     # ---------------------------------------------------------------- equipos
     def teams(self, req):
@@ -254,7 +290,7 @@ class App:
 
     def config_set(self, req):
         body = req.json()
-        allowed = {"region", "extra_leaderboard_ids", "update_interval_hours", "stats_days", "batch_size", "api_key"}
+        allowed = {"region", "extra_leaderboard_ids", "update_interval_hours", "stats_days", "batch_size", "api_key", "stats_match_mode"}
         changes = {k: v for k, v in body.items() if k in allowed}
         if changes.get("api_key") == "••••":
             changes.pop("api_key")
@@ -325,11 +361,18 @@ class App:
         d = self._load(mid)
         out = matches.overview(d["match_info"], self._hero_names())
         con = self.con()
-        names = {}
+        try:  # nombres y avatares de Steam de los 12 jugadores (caché de 7 días)
+            updater_mod.fetch_steam_profiles(con, self.client, [p["account_id"] for p in out["players"]])
+        except Exception as e:
+            print(f"[api] sin perfiles de Steam para la partida {mid}: {e}")
         for p in out["players"]:
             r = con.execute("SELECT p.id, COALESCE(p.display_name, a.steam_name) n FROM accounts a JOIN players p ON p.id=a.player_id WHERE a.account_id=?", (p["account_id"],)).fetchone()
+            sp = con.execute("SELECT personaname, avatar FROM steam_profiles WHERE account_id=?", (p["account_id"],)).fetchone()
             p["player_id"], p["name"] = (r["id"], r["n"]) if r else (None, None)
-            names[p["slot"]] = p["name"]
+            p["steam_name"] = sp["personaname"] if sp else None
+            p["avatar"] = images.steam_avatar_path(sp["avatar"]) if sp else None
+            if not p["name"]:
+                p["name"] = p["steam_name"]
         return out
 
     def match_positions(self, req, mid):
