@@ -11,6 +11,7 @@ export async function render(root, ctx) {
     extra_leaderboard_ids: el('input', { value: (cfg.extra_leaderboard_ids || []).join(', ') }),
     update_interval_hours: el('input', { type: 'number', min: 1, value: cfg.update_interval_hours }),
     stats_days: el('input', { type: 'number', min: 1, max: 365, value: cfg.stats_days }),
+    stats_match_mode: el('select', {}, [['ranked', 'Solo ranked'], ['ranked,unranked', 'Ranked + normales']].map(([v, l]) => el('option', { value: v, selected: (cfg.stats_match_mode || 'ranked') === v }, l))),
     batch_size: el('input', { type: 'number', min: 1, max: 200, value: cfg.batch_size }),
     api_key: el('input', { type: 'password', value: cfg.api_key, placeholder: 'opcional (más margen de rate limit)', autocomplete: 'off' }),
   };
@@ -22,13 +23,14 @@ export async function render(root, ctx) {
       el('label', { for: 'cfg-extra_leaderboard_ids' }, 'Leaderboards extra'), el('div', {}, f.extra_leaderboard_ids, el('div', { class: 'muted small', id: 'cfg-extra-help' }, 'IDs de temporadas pasadas que también aportan jugadores (1001 = Beta Season 1, 1000 jugadores en Europa). La temporada actual se incluye siempre.')),
       el('label', { for: 'cfg-update_interval_hours' }, 'Cada (horas)'), f.update_interval_hours,
       el('label', { for: 'cfg-stats_days' }, 'Stats de los últimos (días)'), f.stats_days,
+      el('label', { for: 'cfg-stats_match_mode' }, 'Modo de partida de las stats'), f.stats_match_mode,
       el('label', { for: 'cfg-batch_size' }, 'Cuentas por petición'), f.batch_size,
       el('label', { for: 'cfg-api_key' }, 'API key'), f.api_key),
     el('div', { class: 'row', style: { marginTop: '8px' } }, el('button', { class: 'primary', onclick: async () => {
       try {
         await api.post('/api/config', {
           region: f.region.value, extra_leaderboard_ids: f.extra_leaderboard_ids.value.split(/[\s,;]+/).filter(Boolean).map(Number),
-          update_interval_hours: +f.update_interval_hours.value, stats_days: +f.stats_days.value, batch_size: +f.batch_size.value, api_key: f.api_key.value,
+          update_interval_hours: +f.update_interval_hours.value, stats_days: +f.stats_days.value, stats_match_mode: f.stats_match_mode.value, batch_size: +f.batch_size.value, api_key: f.api_key.value,
         });
         toast('Guardado. Se aplica en la próxima actualización.');
       } catch (e) { toast(e.message, true); }

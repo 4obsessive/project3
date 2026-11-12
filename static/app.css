@@ -305,7 +305,7 @@ main { padding: 22px 20px 40px; max-width: 1440px; }
 .kpi-val { font-family: var(--font-display); font-size: var(--fs-2xl); font-weight: 800; line-height: 1.05; }
 .kpi-lbl { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 1px; color: var(--muted); font-weight: 700; margin-top: 2px; }
 .kpi-sub { font-size: var(--fs-xs); color: var(--muted); margin-top: 4px; }
-.home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 .home-grid > * { min-width: 0; }
 .onboarding .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .steps li { display: flex; gap: 12px; background: var(--panel2); border-radius: 8px; padding: 14px; }

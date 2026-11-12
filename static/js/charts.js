@@ -48,11 +48,12 @@ function legendFor(series) {
 /** labelColor(label, index) -> color|null: pinta la etiqueta del eje X (y la subraya) con ese color (p. ej. carriles). */
 export function bars({ labels, series, unit = '', height = 220, label = '', labelColor = null }) {
   const W = Math.max(320, labels.length * (series.length * 26 + 30) + 60), H = height, P = { l: 44, r: 10, t: 14, b: 46 };
-  const vals = series.flatMap(sr => sr.values).filter(v => v != null);
+  const vals = series.flatMap(sr => [...sr.values, ...(sr.ci || []).flat()]).filter(v => v != null);
   const max = Math.max(0, ...vals), min = Math.min(0, ...vals);
   const span = (max - min) || 1;
   const y = v => P.t + (H - P.t - P.b) * (1 - (v - min) / span);
   const svg = svgRoot(W, H, label || `Barras: ${series.map(sr => sr.name).join(' vs ')}`);
+  svg.style.color = cssVar('--text', '#eee');
   const fills = series.map((sr, j) => hatched(sr) ? hatchPattern(svg, colorOf(sr, j)) : colorOf(sr, j));
   for (const tv of ticks(min, max)) {
     svg.append(s('line', { x1: P.l, x2: W - P.r, y1: y(tv), y2: y(tv), stroke: gridColor() }));
@@ -66,7 +67,13 @@ export function bars({ labels, series, unit = '', height = 220, label = '', labe
       const y0 = y(Math.max(0, v)), y1 = y(Math.min(0, v));
       svg.append(s('rect', { x, y: y0, width: bw - 2, height: Math.max(1, y1 - y0), fill: fills[j], rx: 2 }, s('title', {}, `${sr.name}: ${v}${unit}`)));
       // etiqueta de valor solo si la barra es lo bastante ancha para leerla
-      if (bw >= 22) svg.append(s('text', { class: 'val', x: x + bw / 2 - 1, y: v >= 0 ? y0 - 3 : y1 + 12, 'text-anchor': 'middle' }, short(v) + unit));
+      const ci = sr.ci?.[i];
+      if (ci) {  // bigote del intervalo de confianza
+        const cx = x + bw / 2 - 1;
+        svg.append(s('line', { class: 'whisker', x1: cx, x2: cx, y1: y(ci[1]), y2: y(ci[0]), stroke: 'currentColor', 'stroke-width': 1.5 }, s('title', {}, `IC90 ${ci[0]}–${ci[1]}${unit}`)));
+        for (const e of ci) svg.append(s('line', { x1: cx - 4, x2: cx + 4, y1: y(e), y2: y(e), stroke: 'currentColor', 'stroke-width': 1.5 }));
+      }
+      if (bw >= 22 && !ci) svg.append(s('text', { class: 'val', x: x + bw / 2 - 1, y: v >= 0 ? y0 - 3 : y1 + 12, 'text-anchor': 'middle' }, short(v) + unit));
     });
     const lc = labelColor ? labelColor(lab, i) : null;
     const lx = P.l + i * gw + gw / 2, shown = trunc(lab, Math.floor(gw / 6.5));

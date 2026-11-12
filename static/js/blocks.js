@@ -23,7 +23,8 @@ function laneSeqCell(seq) {
   });
   return wrap;
 }
-const laneCol = c => c.fmt === 'lane' ? { render: r => laneChip(r.carril_id, LANES) }
+const laneCol = c => c.fmt === 'evidence' ? { render: r => r[c.key] ? el('span', { class: 'ev-chip ' + r[c.key] }, r[c.key]) : '' }
+  : c.fmt === 'lane' ? { render: r => laneChip(r.carril_id, LANES) }
   : c.fmt === 'lane_seq' ? { render: r => laneSeqCell(r[c.key]), sort: r => laneSeqText(r[c.key]), sortable: false } : {};
 
 const TONE = { confirmed: 'confirmado', interpretation: 'interpretación', warning: 'aviso', info: 'nota' };
