@@ -12,7 +12,7 @@ import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import analysis, config, db, matches, minimap, players, report, summary, updater as updater_mod
+from . import analysis, config, db, images, matches, minimap, players, report, summary, updater as updater_mod
 from .api import ApiError
 from .db import kv_get
 from .ids import to_account_id
@@ -493,10 +493,12 @@ def make_handler(app):
             self.send_header("Content-Security-Policy", CSP)
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("Cache-Control", "no-store" if ctype.startswith("application/json") else "no-cache")
+            extra = headers or {}
+            if not any(k.lower() == "cache-control" for k in extra):
+                self.send_header("Cache-Control", "no-store" if ctype.startswith("application/json") else "no-cache")
             if gz:
                 self.send_header("Content-Encoding", "gzip")
-            for k, v in (headers or {}).items():
+            for k, v in extra.items():
                 self.send_header(k, v)
             self.end_headers()
             if self.command != "HEAD":
@@ -520,6 +522,8 @@ def make_handler(app):
                 if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
                     return self._error(403, "Petición entre sitios no permitida")
                 return self._api("GET", u, b"")
+            if u.path.startswith("/img/"):
+                return self._image(u.path)
             return self._static(u.path)
 
         do_HEAD = do_GET
@@ -565,6 +569,13 @@ def make_handler(app):
                     print(f"[server] error en {method} {u.path}: {type(e).__name__}: {e}")
                     return self._error(500, "Error interno del servidor")
             self._error(404, "Ruta no encontrada")
+
+        def _image(self, path):
+            origin, _, rest = path[len("/img/"):].partition("/")
+            res = images.get(origin, urllib.parse.unquote(rest))
+            if res is None:
+                return self._error(404, "Imagen no disponible")
+            self._send(200, res[0], res[1], headers={"Cache-Control": "public, max-age=604800"})
 
         def _static(self, path):
             if path in ("/", "/index.html"):
