@@ -1,5 +1,6 @@
 """Tests del proxy-caché de imágenes (sin red: el opener se inyecta)."""
 import http.client
+import json
 import os
 import shutil
 import tempfile
@@ -133,6 +134,30 @@ class ImageRoute(_CacheCase):
         self.assertEqual(r.getheader("X-Content-Type-Options"), "nosniff")
         r, _ = self._req("/img/wiki/Walker_Icon.png", host="evil.com")
         self.assertEqual(r.status, 403)
+
+
+class HeroesPayload(unittest.TestCase):
+    def _heroes(self, imgs):
+        import sqlite3
+        from scouting.db import kv_set
+        con = sqlite3.connect(":memory:")
+        con.execute("CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT)")
+        kv_set(con, "hero_names", json.dumps({"1": "Infernus", "18": "Mo & Krill", "2": "The Doorman"}))
+        kv_set(con, "hero_images", json.dumps(imgs))
+        app = App(None, _Upd(), 0)
+        app.con = lambda: con
+        return {h["id"]: h for h in app.heroes(None)}
+
+    def test_image_paths(self):
+        hs = self._heroes({
+            "1": "https://assets-bucket.deadlock-api.com/assets-api-res/images/heroes/inferno_sm.webp",
+            "18": "https://evil.example.com/x.webp", "2": None})
+        self.assertEqual(hs[1]["image"], "/img/api/heroes/inferno_sm.webp")
+        self.assertEqual(hs[1]["wiki_image"], "/img/wiki/Infernus_vertical.png")
+        self.assertIsNone(hs[18]["image"])
+        self.assertEqual(hs[18]["wiki_image"], "/img/wiki/Mo_%26_Krill_vertical.png")
+        self.assertIsNone(hs[2]["image"])
+        self.assertEqual(hs[2]["wiki_image"], "/img/wiki/The_Doorman_vertical.png")
 
 
 if __name__ == "__main__":

@@ -32,6 +32,20 @@ class HttpError(Exception):
         self.status = status
 
 
+_API_IMG_PREFIX = "https://assets-bucket.deadlock-api.com/assets-api-res/images/"
+
+
+def _api_image_path(url):
+    """URL completa de la API de assets -> ruta del proxy local (otros hosts: None)."""
+    if isinstance(url, str) and url.startswith(_API_IMG_PREFIX) and len(url) > len(_API_IMG_PREFIX):
+        return "/img/api/" + url[len(_API_IMG_PREFIX):]
+    return None
+
+
+def _wiki_hero_file(name):
+    return name.replace("&", "%26").replace(" ", "_") + "_vertical.png"
+
+
 def _qint(req, name, default):
     try:
         return int(req.query.get(name, [default])[0])
@@ -205,7 +219,9 @@ class App:
                 imgs = {str(h["id"]): (h.get("images") or {}).get("icon_image_small_webp") for h in hs}
             except ApiError:
                 pass
-        return [{"id": int(k), "name": v, "image": imgs.get(k)} for k, v in sorted(names.items(), key=lambda kv: kv[1])]
+        return [{"id": int(k), "name": v, "image": _api_image_path(imgs.get(k)),
+                 "wiki_image": "/img/wiki/" + _wiki_hero_file(v)}
+                for k, v in sorted(names.items(), key=lambda kv: kv[1])]
 
     def climbers(self, req):
         days = _qint(req, "days", "7")
