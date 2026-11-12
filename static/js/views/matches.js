@@ -245,7 +245,7 @@ function objetivos(root, m, tname) {
     { label: 'cae_s', csv: r => r.destroyed_s ?? '' }, { label: 'cae_mmss', csv: r => r.destroyed_s ? fmt.mmss(r.destroyed_s) : '' },
     { label: 'primer_golpe_s', csv: r => r.first_damage_s ?? '' }], m.objectives) }, 'Exportar CSV')), grid);
   const ev = side => m.objectives.filter(o => o.owner_team === side && o.destroyed_s).map(o => ({ t: o.destroyed_s, label: `${o.label} de ${tname(side)}`, side: side === 0 ? 't0' : 't1', kind: o.type }));
-  const mb = m.midboss.map(x => ({ t: x.t, label: `Midboss: lo mata ${tname(x.team_killed)}, lo reclama ${tname(x.team_claimed)}`, side: x.team_killed === 0 ? 't0' : 't1', kind: 'Titan' }));
+  const mb = m.midboss.map(x => ({ t: x.t, label: `Midboss: lo mata ${tname(x.team_killed)}, lo reclama ${tname(x.team_claimed)}`, side: x.team_killed === 0 ? 't0' : 't1', kind: 'Midboss' }));
   root.append(el('h3', { style: { marginTop: '14px' } }, 'Línea de tiempo'),
     el('p', { class: 'muted small' }, 'Color = equipo DUEÑO del objetivo que cae (ámbar relleno = equipo 0, azul en contorno = equipo 1).'),
     timeline({ rows: [

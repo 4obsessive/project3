@@ -1,6 +1,7 @@
-import { api } from '../api.js';
+import { api, getHeroes } from '../api.js';
 import { el, fmt, dataTable, toast, spinner, store, errorBox } from '../util.js';
-import { renderSection } from '../blocks.js';
+import { renderSection, setLanes } from '../blocks.js';
+import { heroPortrait } from '../art.js';
 
 export async function render(root, ctx) {
   const teams = await api.get('/api/teams');
@@ -56,8 +57,22 @@ export async function render(root, ctx) {
     } catch (e) { out.innerHTML = ''; out.append(errorBox(e.message, run, 'No se pudo generar el informe')); }
   }
 
+  async function heroStrip(r) {
+    if (!(r.our_heroes || []).length) return null;
+    let heroes = [];
+    try { heroes = await getHeroes(); } catch (e) { /* sin catálogo: se muestran las iniciales */ }
+    const byId = new Map(heroes.map(h => [h.id, h]));
+    return el('div', { class: 'row', style: { gap: '10px', flexWrap: 'wrap', margin: '8px 0' }, 'aria-label': 'Héroes del equipo en las partidas analizadas' },
+      r.our_heroes.map(o => {
+        const h = byId.get(o.hero_id) || { id: o.hero_id, name: `#${o.hero_id}` };
+        return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '4px' }, title: `${h.name}: ${o.matches} partidas` },
+          heroPortrait(h, { size: 'md', shape: 'card' }), el('b', {}, `×${o.matches}`));
+      }));
+  }
+
   function show(r) {
     out.innerHTML = '';
+    setLanes(r.lanes);
     const TN = r.team_names;
     const head = el('div', { class: 'panel' },
       el('h2', {}, `Informe: ${r.team}`),
@@ -81,6 +96,8 @@ export async function render(root, ctx) {
     const toc = el('nav', { class: 'row small no-print', 'aria-label': 'Índice del informe' }, r.sections.map(s => el('button', { type: 'button', class: 'linkbtn', onclick: () => { const t = document.getElementById('sec-' + s.id); if (t) { t.tabIndex = -1; t.scrollIntoView({ behavior: 'smooth' }); t.focus({ preventScroll: true }); } } }, s.title)));
     head.append(toc, el('button', { class: 'no-print', onclick: () => window.print() }, 'Imprimir / PDF'));
     out.append(head, ...r.sections.map(renderSection));
+    // los retratos se insertan bajo la línea de resumen cuando llega el catálogo de héroes
+    heroStrip(r).then(strip => { if (strip && head.isConnected) head.children[1].after(strip); });
   }
 
   root.append(el('div', { class: 'panel no-print' },

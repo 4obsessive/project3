@@ -161,8 +161,19 @@ def run(team, match_datas, roster, side_overrides=None, params=None):
         sections.append(_run_one(m, ctx))
     if conclusions:
         sections.append(_run_one(conclusions, ctx))
-    return {"team": team, "n": ctx.n, "params": params, "sides": sides, "skipped": skipped,
+    return {"team": team, "n": ctx.n, "params": params, "sides": sides, "skipped": skipped, "our_heroes": _our_heroes(ctxs),
             "lanes": M.lanes_payload(), "team_names": M.TEAM_NAMES, "team_names_verified": M.TEAM_NAMES_VERIFIED, "sections": sections}
+
+
+def _our_heroes(ctxs, limit=12):
+    """Héroes del lado propio: partidas analizadas en que aparece cada uno (máx. `limit`, más usados primero)."""
+    counts = {}
+    for m in ctxs:
+        seen = {p.get("hero_id") for p in m.mi.get("players") or [] if p.get("team") == m.our and p.get("hero_id") is not None}
+        for h in seen:
+            counts[h] = counts.get(h, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
+    return [{"hero_id": h, "matches": n} for h, n in ranked]
 
 
 def _run_one(m, ctx):

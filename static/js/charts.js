@@ -1,5 +1,6 @@
 // Gráficas SVG sencillas: barras, histograma, líneas y línea de tiempo.
 import { el, fmt, cssVar } from './util.js';
+import { objectiveSrc, laneStyle } from './art.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 // Colores leídos de los tokens CSS (app.css :root): una sola fuente para gráficas, mapa y leyendas.
@@ -44,7 +45,8 @@ function legendFor(series) {
 }
 
 /** Barras agrupadas verticales. labels: [...], series: [{name, values, side}] */
-export function bars({ labels, series, unit = '', height = 220, label = '' }) {
+/** labelColor(label) -> color|null: pinta la etiqueta del eje X (y la subraya) con ese color (p. ej. carriles). */
+export function bars({ labels, series, unit = '', height = 220, label = '', labelColor = null }) {
   const W = Math.max(320, labels.length * (series.length * 26 + 30) + 60), H = height, P = { l: 44, r: 10, t: 14, b: 46 };
   const vals = series.flatMap(sr => sr.values).filter(v => v != null);
   const max = Math.max(0, ...vals), min = Math.min(0, ...vals);
@@ -66,7 +68,10 @@ export function bars({ labels, series, unit = '', height = 220, label = '' }) {
       // etiqueta de valor solo si la barra es lo bastante ancha para leerla
       if (bw >= 22) svg.append(s('text', { class: 'val', x: x + bw / 2 - 1, y: v >= 0 ? y0 - 3 : y1 + 12, 'text-anchor': 'middle' }, short(v) + unit));
     });
-    svg.append(s('text', { x: P.l + i * gw + gw / 2, y: H - P.b + 16, 'text-anchor': 'middle' }, trunc(lab, Math.floor(gw / 6.5))));
+    const lc = labelColor ? labelColor(lab) : null;
+    const lx = P.l + i * gw + gw / 2, shown = trunc(lab, Math.floor(gw / 6.5));
+    svg.append(s('text', lc ? { x: lx, y: H - P.b + 16, 'text-anchor': 'middle', fill: lc, 'font-weight': 600 } : { x: lx, y: H - P.b + 16, 'text-anchor': 'middle' }, shown));
+    if (lc) { const hw = Math.min(gw - 8, shown.length * 6.5) / 2; svg.append(s('line', { x1: lx - hw, x2: lx + hw, y1: H - P.b + 21, y2: H - P.b + 21, stroke: lc, 'stroke-width': 3, 'stroke-linecap': 'round' })); }
   });
   return el('div', {}, legendFor(series), svg);
 }
@@ -117,10 +122,12 @@ export function lines({ series, height = 160, invert = false, yfmt = v => short(
   return el('div', {}, legendFor(series), svg);
 }
 
-/** Línea de tiempo: rows [{label, duration, events:[{t, label, side, kind}]}] */
-export function timeline({ rows, label = '' }) {
+/** Línea de tiempo: rows [{label, duration, events:[{t, label, side, kind}]}].
+ *  Eventos con objetivo conocido llevan su imagen (≤ 22 px) con borde del color del lado (contorno discontinuo = «them»/t1).
+ *  lanes: {id:{nombre,color}}; una fila cuyo label empieza por un nombre de carril lleva una franja de su color. */
+export function timeline({ rows, lanes = null, label = '' }) {
   const maxT = Math.max(60, ...rows.map(r => r.duration || 0), ...rows.flatMap(r => r.events.map(e => e.t || 0)));
-  const W = 900, rowH = 22, P = { l: 120, r: 10, t: 20 };
+  const W = 900, rowH = 26, P = { l: 120, r: 10, t: 20 };
   const H = P.t + rows.length * rowH + 10;
   const X = t => P.l + (W - P.l - P.r) * t / maxT;
   const svg = svgRoot(W, H, label || `Línea de tiempo: ${rows.map(r => r.label).join(', ')}`, false);
@@ -130,30 +137,45 @@ export function timeline({ rows, label = '' }) {
     svg.append(s('line', { x1: X(m * 60), x2: X(m * 60), y1: major ? P.t - 4 : P.t, y2: H, stroke: gridColor(), 'stroke-opacity': major ? 1 : 0.35 }));
     if (major) svg.append(s('text', { x: X(m * 60), y: 12, 'text-anchor': 'middle' }, `${m}′`));
   }
-  const shape = { Guardian: 'circle', Walker: 'rect', 'Base guardian': 'diamond', Shrine: 'tri', Titan: 'star', Core: 'star' };
+  const shape = { Guardian: 'diamond', Walker: 'rect', 'Base guardian': 'diamond', Shrine: 'tri', Titan: 'star', Core: 'star' };
+  const laneIds = Object.keys(lanes || {});
+  const laneOfRow = r => { const l = String(r.label || '').toLowerCase(); const id = laneIds.find(i => lanes[i].nombre && l.startsWith(String(lanes[i].nombre).toLowerCase())); return id ? laneStyle(id, lanes) : null; };
+  // marcador de forma (sin imagen): también es el recurso cuando la imagen no carga
+  const shapeNode = (kind, x, cy) => {
+    if (kind === 'rect') return s('rect', { x: x - 4, y: cy - 4, width: 8, height: 8 });
+    if (kind === 'diamond') return s('polygon', { points: `${x},${cy - 7} ${x + 6},${cy} ${x},${cy + 7} ${x - 6},${cy}` });
+    if (kind === 'tri') return s('polygon', { points: `${x},${cy - 6} ${x + 5},${cy + 4} ${x - 5},${cy + 4}` });
+    if (kind === 'star') return s('polygon', { points: `${x},${cy - 7} ${x + 2},${cy - 2} ${x + 7},${cy - 2} ${x + 3},${cy + 2} ${x + 4},${cy + 7} ${x},${cy + 4} ${x - 4},${cy + 7} ${x - 3},${cy + 2} ${x - 7},${cy - 2} ${x - 2},${cy - 2}` });
+    return s('circle', { cx: x, cy, r: 4 });
+  };
+  let hasImg = false;
   rows.forEach((r, i) => {
     const cy = P.t + i * rowH + rowH / 2;
+    const lane = laneOfRow(r);
+    if (lane) svg.append(s('rect', { x: 0, y: cy - rowH / 2 + 2, width: 4, height: rowH - 4, rx: 2, fill: lane.color }, s('title', {}, lane.nombre)));
     svg.append(s('text', { x: P.l - 8, y: cy + 4, 'text-anchor': 'end' }, trunc(r.label, 18)));
-    svg.append(s('line', { x1: X(0), x2: X(r.duration || maxT), y1: cy, y2: cy, stroke: cssVar('--track', '#3a404b') }));
+    svg.append(s('line', { x1: X(0), x2: X(r.duration || maxT), y1: cy, y2: cy, stroke: lane ? lane.color : cssVar('--track', '#3a404b'), 'stroke-opacity': lane ? 0.6 : 1 }));
     for (const e of r.events) {
       const x = X(e.t), c = (e.side && SIDE_COLORS[e.side]) || e.color || SIDE_COLORS.neutral;
       const kind = shape[e.kind] || 'circle';
       // «them»/t1 huecos (solo contorno): distinguibles sin color
       const paint = hatched(e) ? { fill: 'none', stroke: c, 'stroke-width': 2 } : { fill: c };
-      let node;
-      if (kind === 'rect') node = s('rect', { x: x - 4, y: cy - 4, width: 8, height: 8 });
-      else if (kind === 'diamond') node = s('polygon', { points: `${x},${cy - 6} ${x + 5},${cy} ${x},${cy + 6} ${x - 5},${cy}` });
-      else if (kind === 'tri') node = s('polygon', { points: `${x},${cy - 6} ${x + 5},${cy + 4} ${x - 5},${cy + 4}` });
-      else if (kind === 'star') node = s('polygon', { points: `${x},${cy - 7} ${x + 2},${cy - 2} ${x + 7},${cy - 2} ${x + 3},${cy + 2} ${x + 4},${cy + 7} ${x},${cy + 4} ${x - 4},${cy + 7} ${x - 3},${cy + 2} ${x - 7},${cy - 2} ${x - 2},${cy - 2}` });
-      else node = s('circle', { cx: x, cy, r: 4 });
-      for (const [k, v] of Object.entries(paint)) node.setAttribute(k, v);
-      node.append(s('title', {}, `${fmt.mmss(e.t)} · ${e.label}`));
-      svg.append(node);
+      const g = s('g', {}, s('title', {}, `${fmt.mmss(e.t)} · ${e.label}`));
+      const src = e.kind ? objectiveSrc(e.kind) : null;
+      const plain = () => { const node = shapeNode(kind, x, cy); for (const [k, v] of Object.entries(paint)) node.setAttribute(k, v); return node; };
+      if (src) {
+        hasImg = true;
+        const frame = s('rect', { x: x - 11, y: cy - 11, width: 22, height: 22, rx: 4, fill: 'rgba(0,0,0,.35)', stroke: c, 'stroke-width': 2, 'stroke-dasharray': hatched(e) ? '4 2' : null });
+        const img = s('image', { href: src, x: x - 9, y: cy - 9, width: 18, height: 18, preserveAspectRatio: 'xMidYMid meet' });
+        img.addEventListener('error', () => { frame.remove(); img.replaceWith(plain()); });
+        g.append(frame, img);
+      } else g.append(plain());
+      svg.append(g);
     }
   });
   const leg = el('div', { class: 'legend' },
-    el('span', {}, '● Guardian · ■ Walker · ◆ Base guardian · ▲ Shrine · ★ Titan/Core'),
-    ...(rows.some(r => r.events.some(e => e.side === 'us')) ? [el('span', {}, el('i', { style: { background: SIDE_COLORS.us } }), 'este equipo destruye (relleno)'), el('span', { style: { color: SIDE_COLORS.them } }, el('i', { class: 'hollow' }), el('span', { class: 'muted' }, 'pierde (contorno)'))] : []),
+    el('span', {}, hasImg ? 'Cada evento lleva la imagen de su objetivo (◆ Guardian)' : '◆ Guardian · ■ Walker · ▲ Shrine · ★ Titan/Core'),
+    ...(rows.some(r => r.events.some(e => e.side === 'us')) ? [el('span', {}, el('i', { style: { background: SIDE_COLORS.us } }), 'este equipo destruye (borde continuo)'), el('span', { style: { color: SIDE_COLORS.them } }, el('i', { class: 'hollow' }), el('span', { class: 'muted' }, 'pierde (borde discontinuo)'))] : []),
     ...(rows.some(r => r.events.some(e => e.side === 't0' || e.side === 't1')) ? [el('span', {}, el('i', { style: { background: SIDE_COLORS.t0 } }), 'equipo 0 (relleno)'), el('span', { style: { color: SIDE_COLORS.t1 } }, el('i', { class: 'hollow' }), el('span', { class: 'muted' }, 'equipo 1 (contorno)'))] : []));
   return el('div', {}, leg, el('div', { class: 'chart-scroll' }, svg));
 }

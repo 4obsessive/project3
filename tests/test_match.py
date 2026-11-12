@@ -146,6 +146,15 @@ class SideAndReport(unittest.TestCase):
         koth = next(s for s in out["sections"] if s["id"] == "koth")
         self.assertTrue(any(b["type"] == "unavailable" for b in koth["blocks"]))
 
+    def test_our_heroes(self):
+        out = report.run("Prueba", [self.data], self.team1)
+        heroes = out["our_heroes"]
+        self.assertEqual(len(heroes), 6)
+        self.assertTrue(all(h["matches"] == 1 for h in heroes))
+        expected = {p["hero_id"] for p in self.mi["players"] if p["team"] == 1}
+        self.assertEqual({h["hero_id"] for h in heroes}, expected)
+        json.dumps(heroes)
+
     def test_normalization_rotates_team1(self):
         out = report.run("Prueba", [self.data], self.team1, params={"normalize": True})
         mapa = next(s for s in out["sections"] if s["id"] == "mapa")

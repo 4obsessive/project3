@@ -2,6 +2,12 @@
 import { el, dataTable } from './util.js';
 import { bars, histogram, timeline, SIDE_COLORS } from './charts.js';
 import { MapView, legend } from './map.js';
+import { laneChip, objectiveImg } from './art.js';
+
+// Carriles del informe ({id:{nombre,color,alias}}): los fija la vista del informe antes de pintar las secciones.
+let LANES = null;
+export function setLanes(l) { LANES = l; }
+const laneIdByName = name => Object.keys(LANES || {}).find(id => LANES[id].nombre === name) ?? null;
 
 const TONE = { confirmed: 'confirmado', interpretation: 'interpretación', warning: 'aviso', info: 'nota' };
 
@@ -14,13 +20,15 @@ export function renderBlock(b) {
       return el('div', { class: 'unavailable block' }, el('b', {}, `No disponible — ${b.title}: `), b.reason);
     case 'table':
       return el('div', { class: 'block' }, title(b.title, b.n), b.note ? el('div', { class: 'muted small' }, b.note) : null,
-        dataTable(b.columns.map(c => ({ key: c.key, label: c.label, fmt: c.fmt, wrap: c.key === 'texto' })), b.rows, { label: b.title, emptyText: 'Sin datos' }));
+        dataTable(b.columns.map(c => ({ key: c.key, label: c.label, fmt: c.fmt, wrap: c.key === 'texto',
+          render: c.key === 'carril' ? r => (laneIdByName(r.carril) != null ? laneChip(laneIdByName(r.carril), LANES) : (r.carril ?? '')) : undefined })), b.rows, { label: b.title, emptyText: 'Sin datos' }));
     case 'bars':
-      return el('div', { class: 'block' }, title(b.title, b.n), bars({ labels: b.labels, series: b.series, unit: b.unit || '', label: b.title }));
+      return el('div', { class: 'block' }, title(b.title, b.n), bars({ labels: b.labels, series: b.series, unit: b.unit || '', label: b.title,
+        labelColor: lab => (laneIdByName(lab) != null ? LANES[laneIdByName(lab)].color : null) }));
     case 'histogram':
       return el('div', { class: 'block' }, title(b.title, b.n), histogram({ series: b.series, bin_s: b.bin_s || 60, label: b.title }));
     case 'timeline':
-      return el('div', { class: 'block' }, title(b.title, b.n), timeline({ rows: b.rows, label: b.title }));
+      return el('div', { class: 'block' }, title(b.title, b.n), timeline({ rows: b.rows, lanes: LANES, label: b.title }));
     case 'map': {
       const box = el('div');
       const wrap = el('div', { class: 'block' }, title(b.title, b.n));
@@ -44,7 +52,8 @@ export function renderBlock(b) {
 }
 
 export function renderSection(s) {
-  const sec = el('div', { class: 'panel', id: 'sec-' + s.id }, el('h2', {}, s.title));
+  const ART = { midboss: 'Midboss', koth: 'KOTH' };  // secciones con imagen de objetivo en el título
+  const sec = el('div', { class: 'panel', id: 'sec-' + s.id }, el('h2', {}, ART[s.id] ? objectiveImg(ART[s.id], null, { size: 'md' }) : null, ART[s.id] ? ' ' : null, s.title));
   if (s.error) sec.append(el('div', { class: 'section-error' }, `Esta sección falló: ${s.error}. El resto del informe es válido.`));
   for (const b of s.blocks) {
     try { sec.append(renderBlock(b)); } catch (e) { sec.append(el('div', { class: 'section-error' }, `No se pudo pintar un bloque: ${e.message}`)); }
