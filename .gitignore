@@ -10,3 +10,4 @@ __pycache__/
 
 # Herramientas
 .claude/settings.local.json
+.superpowers/
