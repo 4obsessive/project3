@@ -37,7 +37,7 @@ const WIKI_OBJ = {
   rejuvenator: 'Rejuvenator_crystal.png',
   koth: 'Unstable_Rift.png',
 };
-const OBJ_ICON = { guardian: 'shield', walker: 'sword', shrine: 'star', titan: 'trophy', core: 'trophy',
+const OBJ_ICON = { walker: 'sword', shrine: 'star', titan: 'trophy', core: 'trophy',
   midboss: 'star', rejuvenator: 'star', koth: 'star' };
 
 function objKey(type) {
@@ -81,7 +81,7 @@ const LANE_FALLBACK = {
 
 export function laneStyle(laneId, lanes) {
   const l = (lanes && lanes[laneId]) || LANE_FALLBACK[laneId];
-  return l ? { nombre: l.nombre, color: l.color, alias: l.alias }
+  return l ? { nombre: l.nombre, color: l.color || 'var(--muted)', alias: l.alias }
     : { nombre: `Carril ${laneId}`, color: 'var(--muted)', alias: '' };
 }
 
