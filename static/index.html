@@ -4,24 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deadlock Scouting</title>
+<link rel="preload" href="/static/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/barlow-condensed-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<header class="topbar">
+<aside class="rail" aria-label="Navegación">
   <a class="brand" href="#inicio"><span class="brand-mark" aria-hidden="true"></span><span>Deadlock <b>Scouting</b></span></a>
   <nav id="nav" aria-label="Secciones">
+    <span class="nav-group" role="presentation">Scouting</span>
     <a href="#inicio" data-view="inicio">Inicio</a>
     <a href="#jugadores" data-view="jugadores">Jugadores</a>
     <a href="#heroe" data-view="heroe">Por héroe</a>
     <a href="#climbers" data-view="climbers">Climbers</a>
+    <span class="nav-group" role="presentation">Equipos</span>
     <a href="#equipos" data-view="equipos">Equipos</a>
-    <a href="#partidas" data-view="partidas">Partidas</a>
     <a href="#informe" data-view="informe">Informe</a>
+    <span class="nav-group" role="presentation">Análisis</span>
+    <a href="#partidas" data-view="partidas">Partidas</a>
+    <span class="nav-group" role="presentation">Sistema</span>
     <a href="#ajustes" data-view="ajustes">Ajustes</a>
   </nav>
-  <div id="status" class="status" aria-label="Estado de la actualización"></div>
-</header>
-<main id="view" tabindex="-1"></main>
+  <div class="rail-foot"><div id="status" class="status" aria-label="Estado de la actualización"></div></div>
+</aside>
+<div class="app">
+  <header class="topbar">
+    <div class="crumb" id="crumb"></div>
+    <span class="chip win" id="window-chip" hidden></span>
+    <div class="gsearch" id="gsearch"></div>
+    <div id="status-mobile" class="status-mobile" aria-label="Estado de la actualización"></div>
+  </header>
+  <main id="view" tabindex="-1"></main>
+</div>
 <div id="backdrop" class="backdrop" hidden></div>
 <aside id="drawer" class="drawer" role="dialog" aria-modal="true" aria-label="Perfil del jugador" hidden></aside>
 <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>

@@ -91,7 +91,7 @@ export function histogram({ series, bin_s = 60, height = 200, label = '' }) {
 
 /** Líneas temporales. series: [{name, points:[[t, v]], color}], invert para rangos (1 arriba). */
 export function lines({ series, height = 160, invert = false, yfmt = v => short(v), xfmt = t => fmt.date(t), label = '' }) {
-  const pts = series.flatMap(sr => sr.points).filter(p => p[1] != null);
+  const pts = series.flatMap(sr => [...sr.points, ...(sr.band || []).flatMap(b => [[b[0], b[1]], [b[0], b[2]]])]).filter(p => p[1] != null);
   if (!pts.length) return el('div', { class: 'muted small' }, 'Sin historial todavía');
   const W = 560, H = height, P = { l: 44, r: 10, t: 10, b: 24 };
   let x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0]));
@@ -116,6 +116,11 @@ export function lines({ series, height = 160, invert = false, yfmt = v => short(
   series.forEach((sr, i) => {
     const p = sr.points.filter(p => p[1] != null);
     const c = colorOf(sr, i);
+    if (sr.band?.length > 1) {
+      const up = sr.band.map(b => `${X(b[0])},${Y(b[2])}`), dn = sr.band.slice().reverse().map(b => `${X(b[0])},${Y(b[1])}`);
+      svg.append(s('polygon', { points: [...up, ...dn].join(' '), fill: c, 'fill-opacity': .14, stroke: 'none' }));
+    }
+    if (sr.ref != null) svg.append(s('line', { x1: P.l, x2: W - P.r, y1: Y(sr.ref), y2: Y(sr.ref), stroke: c, 'stroke-opacity': .4, 'stroke-dasharray': '3 4' }));
     svg.append(s('polyline', { points: p.map(q => `${X(q[0])},${Y(q[1])}`).join(' '), fill: 'none', stroke: c, 'stroke-width': 2 }));
     for (const q of p) svg.append(s('circle', { cx: X(q[0]), cy: Y(q[1]), r: 3, fill: c }, s('title', {}, `${xfmt(q[0])}: ${yfmt(q[1])}`)));
   });
