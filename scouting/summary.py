@@ -240,6 +240,7 @@ def build_all(con, player_ids=None):
             "score_default": r["score_default"],
             "score_lo": r["score_lo"],
             "score_hi": r["score_hi"],
+            "score_win_band": [r.get("parts_lo_win"), r.get("parts_hi_win")] if r["score_parts"] else None,
             "provisional": r["provisional"],
             "heroes": hero_list,
             "top_hero_share": (hero_list[0]["matches"] / m) if m and hero_list else None,
