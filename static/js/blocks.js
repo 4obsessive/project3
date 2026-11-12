@@ -2,12 +2,29 @@
 import { el, dataTable } from './util.js';
 import { bars, histogram, timeline, SIDE_COLORS } from './charts.js';
 import { MapView, legend } from './map.js';
-import { laneChip, objectiveImg } from './art.js';
+import { laneChip, laneStyle, objectiveImg } from './art.js';
 
 // Carriles del informe ({id:{nombre,color,alias}}): los fija la vista del informe antes de pintar las secciones.
 let LANES = null;
 export function setLanes(l) { LANES = l; }
-const laneIdByName = name => Object.keys(LANES || {}).find(id => LANES[id].nombre === name) ?? null;
+const SECTION_ART = { midboss: 'Midboss', koth: 'KOTH' };  // secciones con imagen de objetivo en el título
+const laneName = id => laneStyle(id, LANES).nombre;
+
+// «Guardian York → Walker Greenwich» (texto plano) y su versión con imágenes y color de carril
+export function laneSeqText(seq) { return (seq || []).map(s => `${s.tipo} ${laneName(s.carril)}`).join(' → '); }
+function laneSeqCell(seq) {
+  const wrap = el('span', { class: 'lane-seq', style: { display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }, 'aria-label': laneSeqText(seq) });
+  (seq || []).forEach((s, i) => {
+    const ls = laneStyle(s.carril, LANES);
+    if (i) wrap.append(el('span', { 'aria-hidden': 'true', class: 'muted' }, '→'));
+    const img = objectiveImg(s.tipo, null, { size: 'sm' });
+    wrap.append(el('span', { title: `${s.tipo} · ${ls.nombre}`, style: { display: 'inline-flex', flexDirection: 'column', alignItems: 'center' } },
+      img, el('span', { 'aria-hidden': 'true', style: { display: 'block', width: '100%', minWidth: '14px', height: '3px', borderRadius: '2px', background: ls.color } })));
+  });
+  return wrap;
+}
+const laneCol = c => c.fmt === 'lane' ? { render: r => laneChip(r.carril_id, LANES) }
+  : c.fmt === 'lane_seq' ? { render: r => laneSeqCell(r[c.key]), sort: r => laneSeqText(r[c.key]), sortable: false } : {};
 
 const TONE = { confirmed: 'confirmado', interpretation: 'interpretación', warning: 'aviso', info: 'nota' };
 
@@ -20,11 +37,10 @@ export function renderBlock(b) {
       return el('div', { class: 'unavailable block' }, el('b', {}, `No disponible — ${b.title}: `), b.reason);
     case 'table':
       return el('div', { class: 'block' }, title(b.title, b.n), b.note ? el('div', { class: 'muted small' }, b.note) : null,
-        dataTable(b.columns.map(c => ({ key: c.key, label: c.label, fmt: c.fmt, wrap: c.key === 'texto',
-          render: c.key === 'carril' ? r => (laneIdByName(r.carril) != null ? laneChip(laneIdByName(r.carril), LANES) : (r.carril ?? '')) : undefined })), b.rows, { label: b.title, emptyText: 'Sin datos' }));
+        dataTable(b.columns.map(c => ({ key: c.key, label: c.label, fmt: c.fmt, wrap: c.key === 'texto', ...laneCol(c) })), b.rows, { label: b.title, emptyText: 'Sin datos' }));
     case 'bars':
       return el('div', { class: 'block' }, title(b.title, b.n), bars({ labels: b.labels, series: b.series, unit: b.unit || '', label: b.title,
-        labelColor: lab => (laneIdByName(lab) != null ? LANES[laneIdByName(lab)].color : null) }));
+        labelColor: b.lane_ids ? (lab, i) => laneStyle(b.lane_ids[i], LANES).color : null }));
     case 'histogram':
       return el('div', { class: 'block' }, title(b.title, b.n), histogram({ series: b.series, bin_s: b.bin_s || 60, label: b.title }));
     case 'timeline':
@@ -51,9 +67,11 @@ export function renderBlock(b) {
   }
 }
 
+// el texto del título ya dice qué es: la imagen no se anuncia
+function decorative(node) { node.setAttribute('aria-hidden', 'true'); if (node.tagName === 'IMG') node.alt = ''; node.removeAttribute('aria-label'); node.removeAttribute('role'); return node; }
+
 export function renderSection(s) {
-  const ART = { midboss: 'Midboss', koth: 'KOTH' };  // secciones con imagen de objetivo en el título
-  const sec = el('div', { class: 'panel', id: 'sec-' + s.id }, el('h2', {}, ART[s.id] ? objectiveImg(ART[s.id], null, { size: 'md' }) : null, ART[s.id] ? ' ' : null, s.title));
+  const sec = el('div', { class: 'panel', id: 'sec-' + s.id }, el('h2', {}, SECTION_ART[s.id] ? decorative(objectiveImg(SECTION_ART[s.id], null, { size: 'md' })) : null, SECTION_ART[s.id] ? ' ' : null, s.title));
   if (s.error) sec.append(el('div', { class: 'section-error' }, `Esta sección falló: ${s.error}. El resto del informe es válido.`));
   for (const b of s.blocks) {
     try { sec.append(renderBlock(b)); } catch (e) { sec.append(el('div', { class: 'section-error' }, `No se pudo pintar un bloque: ${e.message}`)); }

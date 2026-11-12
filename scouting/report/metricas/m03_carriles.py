@@ -7,8 +7,8 @@ from ...matches import load_objective_map
 TYPES = ("Guardian", "Walker")
 
 
-def _short(r):
-    return f"{r['type'][0]}{r['lane']}" if r["lane"] else r["type"]
+def _step(r):
+    return (r["type"], r["lane"])
 
 
 @metric("carriles", "Guardians y Walkers por carril", order=30)
@@ -46,8 +46,8 @@ def carriles(ctx):
             times[("lost", r["type"], r["lane"])].append(r["destroyed_s"])
         for r in theirs:
             times[("taken", r["type"], r["lane"])].append(r["destroyed_s"])
-        seq_lost[" → ".join(_short(r) for r in ours)] += 1 if ours else 0
-        seq_taken[" → ".join(_short(r) for r in theirs)] += 1 if theirs else 0
+        seq_lost[tuple(_step(r) for r in ours)] += 1 if ours else 0
+        seq_taken[tuple(_step(r) for r in theirs)] += 1 if theirs else 0
         ev = [{"t": r["destroyed_s"], "label": f"{r['label']} perdido", "side": "them", "kind": r["type"]} for r in m.objectives if r["owner_team"] == m.our and r["destroyed_s"]]
         ev += [{"t": r["destroyed_s"], "label": f"{r['label']} rival destruido", "side": "us", "kind": r["type"]} for r in m.objectives if r["owner_team"] == m.their and r["destroyed_s"]]
         timeline.append({"label": f"{m.id} ({'V' if m.won else 'D'})", "duration": m.duration, "events": sorted(ev, key=lambda e: e["t"])})
@@ -58,7 +58,7 @@ def carriles(ctx):
               {"type": "text", "tone": "info", "text": "Carriles por color: York (amarillo), Broadway (azul) y Greenwich (verde); son los mismos para ambos equipos. "
                                                          "El mapeo de team_objective_id es inferido y se puede corregir en Partidas › Mapeo de objetivos."}]
     blocks.append({"type": "bars", "title": "Primer Guardian: carril", "unit": "%", "n": n,
-                   "labels": [ln(l) for l in lanes],
+                   "labels": [ln(l) for l in lanes], "lane_ids": list(lanes),
                    "series": [{"name": "Pierden primero", "side": "them", "values": [round(100 * first_lost[l] / n) for l in lanes]},
                               {"name": "Presionan primero (destruyen el del rival)", "side": "us", "values": [round(100 * first_taken[l] / n) for l in lanes]}]})
     fl, ft = stats(first_lost_t), stats(first_taken_t)
@@ -68,7 +68,7 @@ def carriles(ctx):
                    + (f"Primer Guardian rival destruido: media {ft['mean'] / 60:.1f}, mediana {ft['median'] / 60:.1f} ({ft['n']} partidas)." if ft["n"] else "No destruyen ningún Guardian rival en la muestra.")})
     rows = []
     for l in lanes:
-        row = {"carril": ln(l)}
+        row = {"carril": ln(l), "carril_id": l}
         for rel, lab in (("lost", "perd"), ("taken", "dest")):
             for tp in TYPES:
                 s = stats(times[(rel, tp, l)])
@@ -76,7 +76,7 @@ def carriles(ctx):
                 row[f"{lab}_{tp}_med"] = s["median"]
                 row[f"{lab}_{tp}_avg"] = s["mean"]
         rows.append(row)
-    cols = [{"key": "carril", "label": "Carril"}]
+    cols = [{"key": "carril", "label": "Carril", "fmt": "lane"}]
     for lab, txt in (("perd", "perdido"), ("dest", "destruido al rival")):
         for tp in TYPES:
             cols += [{"key": f"{lab}_{tp}_n", "label": f"{tp} {txt} (partidas)"},
@@ -86,9 +86,9 @@ def carriles(ctx):
     blocks.append({"type": "histogram", "title": "Minuto del primer Guardian", "bin_s": 60, "n": n,
                    "series": [{"name": "Perdido", "side": "them", "values": first_lost_t}, {"name": "Destruido al rival", "side": "us", "values": first_taken_t}]})
     for title, seq in (("Orden habitual en que pierden Guardians/Walkers", seq_lost), ("Orden habitual en que destruyen Guardians/Walkers rivales", seq_taken)):
-        rows = [{"orden": k, "partidas": v, "pct": round(100 * v / n)} for k, v in seq.most_common(6) if k]
-        blocks.append({"type": "table", "title": title, "n": n, "note": "G = Guardian, W = Walker, número = carril.",
-                       "columns": [{"key": "orden", "label": "Secuencia"}, {"key": "partidas", "label": "Partidas"}, {"key": "pct", "label": "%"}], "rows": rows})
+        rows = [{"orden": [{"tipo": tp, "carril": l} for tp, l in k], "partidas": v, "pct": round(100 * v / n)} for k, v in seq.most_common(6) if k]
+        blocks.append({"type": "table", "title": title, "n": n,
+                       "columns": [{"key": "orden", "label": "Secuencia", "fmt": "lane_seq"}, {"key": "partidas", "label": "Partidas"}, {"key": "pct", "label": "%"}], "rows": rows})
     blocks.append({"type": "timeline", "title": "Línea de tiempo por partida", "n": n, "rows": timeline})
 
     # patrones

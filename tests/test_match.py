@@ -155,6 +155,29 @@ class SideAndReport(unittest.TestCase):
         self.assertEqual({h["hero_id"] for h in heroes}, expected)
         json.dumps(heroes)
 
+    def test_carriles_by_lane_id(self):
+        out = report.run("Prueba", [self.data], self.team1)
+        blocks = next(s for s in out["sections"] if s["id"] == "carriles")["blocks"]
+        names = {int(k): v["nombre"] for k, v in out["lanes"].items()}
+        bars = next(b for b in blocks if b["type"] == "bars")
+        self.assertEqual([names[i] for i in bars["lane_ids"]], bars["labels"])
+        tiempos = next(b for b in blocks if b.get("title") == "Tiempos por carril")
+        self.assertEqual(next(c for c in tiempos["columns"] if c["key"] == "carril")["fmt"], "lane")
+        for r in tiempos["rows"]:
+            self.assertIn(r["carril_id"], (1, 3, 4))
+            self.assertEqual(names[r["carril_id"]], r["carril"])
+        seqs = [b for b in blocks if b["type"] == "table" and b["columns"][0]["key"] == "orden"]
+        self.assertEqual(len(seqs), 2)
+        for b in seqs:
+            self.assertEqual(b["columns"][0]["fmt"], "lane_seq")
+            self.assertNotIn("note", b)
+            for r in b["rows"]:
+                self.assertIsInstance(r["orden"], list)
+                for step in r["orden"]:
+                    self.assertIn(step["tipo"], ("Guardian", "Walker"))
+                    self.assertIn(step["carril"], (1, 3, 4))
+        json.dumps(blocks)
+
     def test_normalization_rotates_team1(self):
         out = report.run("Prueba", [self.data], self.team1, params={"normalize": True})
         mapa = next(s for s in out["sections"] if s["id"] == "mapa")

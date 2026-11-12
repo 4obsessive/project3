@@ -45,7 +45,7 @@ function legendFor(series) {
 }
 
 /** Barras agrupadas verticales. labels: [...], series: [{name, values, side}] */
-/** labelColor(label) -> color|null: pinta la etiqueta del eje X (y la subraya) con ese color (p. ej. carriles). */
+/** labelColor(label, index) -> color|null: pinta la etiqueta del eje X (y la subraya) con ese color (p. ej. carriles). */
 export function bars({ labels, series, unit = '', height = 220, label = '', labelColor = null }) {
   const W = Math.max(320, labels.length * (series.length * 26 + 30) + 60), H = height, P = { l: 44, r: 10, t: 14, b: 46 };
   const vals = series.flatMap(sr => sr.values).filter(v => v != null);
@@ -68,7 +68,7 @@ export function bars({ labels, series, unit = '', height = 220, label = '', labe
       // etiqueta de valor solo si la barra es lo bastante ancha para leerla
       if (bw >= 22) svg.append(s('text', { class: 'val', x: x + bw / 2 - 1, y: v >= 0 ? y0 - 3 : y1 + 12, 'text-anchor': 'middle' }, short(v) + unit));
     });
-    const lc = labelColor ? labelColor(lab) : null;
+    const lc = labelColor ? labelColor(lab, i) : null;
     const lx = P.l + i * gw + gw / 2, shown = trunc(lab, Math.floor(gw / 6.5));
     svg.append(s('text', lc ? { x: lx, y: H - P.b + 16, 'text-anchor': 'middle', fill: lc, 'font-weight': 600 } : { x: lx, y: H - P.b + 16, 'text-anchor': 'middle' }, shown));
     if (lc) { const hw = Math.min(gw - 8, shown.length * 6.5) / 2; svg.append(s('line', { x1: lx - hw, x2: lx + hw, y1: H - P.b + 21, y2: H - P.b + 21, stroke: lc, 'stroke-width': 3, 'stroke-linecap': 'round' })); }
