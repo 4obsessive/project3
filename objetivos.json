@@ -1,0 +1,22 @@
+{
+  "_nota": "Mapeo team_objective_id -> objetivo. Inferido de los tiempos reales y coherente con /v1/assets/map (tier1_1, tier1_3, tier1_4: carriles 1, 3 y 4). En el mapa actual de 3 carriles no existen 2, 6 ni 13. Editable desde la web.",
+  "carriles": {"1": "Carril 1 (izq.)", "2": "Carril 2", "3": "Carril 3 (centro)", "4": "Carril 4 (der.)"},
+  "objetivos": {
+    "0":  {"tipo": "Core", "carril": null},
+    "1":  {"tipo": "Guardian", "carril": 1},
+    "2":  {"tipo": "Guardian", "carril": 2},
+    "3":  {"tipo": "Guardian", "carril": 3},
+    "4":  {"tipo": "Guardian", "carril": 4},
+    "5":  {"tipo": "Walker", "carril": 1},
+    "6":  {"tipo": "Walker", "carril": 2},
+    "7":  {"tipo": "Walker", "carril": 3},
+    "8":  {"tipo": "Walker", "carril": 4},
+    "9":  {"tipo": "Titan", "carril": null},
+    "10": {"tipo": "Shrine", "carril": null, "n": 1},
+    "11": {"tipo": "Shrine", "carril": null, "n": 2},
+    "12": {"tipo": "Base guardian", "carril": 1},
+    "13": {"tipo": "Base guardian", "carril": 2},
+    "14": {"tipo": "Base guardian", "carril": 3},
+    "15": {"tipo": "Base guardian", "carril": 4}
+  }
+}

@@ -1,0 +1,4 @@
+# Una línea por jugador: uno o varios IDs (cuentas del mismo jugador) y el nombre del equipo.
+# IDs válidos: número (account_id), [U:1:N], steam64 o URL de perfil de Steam.
+# 35187362 Buff Enjoyers
+# 483770846, 802747733 Buff Enjoyers

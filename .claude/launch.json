@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "scouting",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["app.py", "--no-abrir"],
+      "port": 8000
+    }
+  ]
+}

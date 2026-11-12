@@ -1,0 +1,2 @@
+# Sin dependencias externas: solo la biblioteca estándar de Python (3.9 o superior).
+# (http.server, sqlite3, urllib, gzip, zlib, json, threading)

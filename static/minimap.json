@@ -1,0 +1,11 @@
+{
+  "x_min": -10752,
+  "x_max": 10752,
+  "y_min": -10752,
+  "y_max": 10752,
+  "invert_y": true,
+  "invert_x": false,
+  "source": "oficial (/v1/assets/map: radio 10752, centro 0)",
+  "verificacion": "match 109084310: precision 0.987, cobertura 0.684 (handoff 0.971; girada 180 grados 0.970)",
+  "imagen": "minimap.png = /v1/assets/map images.minimap (1024x1024 RGBA, mismo dibujo que minimap_midtown_mid.avif)"
+}

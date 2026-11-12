@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deadlock Scouting</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Deadlock Scouting</div>
+  <nav id="nav">
+    <a href="#jugadores" data-view="jugadores">Jugadores</a>
+    <a href="#heroe" data-view="heroe">Por héroe</a>
+    <a href="#climbers" data-view="climbers">Climbers</a>
+    <a href="#equipos" data-view="equipos">Equipos</a>
+    <a href="#partidas" data-view="partidas">Partidas</a>
+    <a href="#informe" data-view="informe">Informe de equipo</a>
+    <a href="#ajustes" data-view="ajustes">Ajustes</a>
+  </nav>
+  <div id="status" class="status"></div>
+</header>
+<main id="view"></main>
+<aside id="drawer" class="drawer" hidden></aside>
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

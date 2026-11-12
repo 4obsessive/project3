@@ -1,0 +1,67 @@
+{
+  "_nota": "Tabla de roles editable. Un héroe puede estar en varios roles: sus partidas se reparten a partes iguales. Los nombres se comparan sin mayúsculas, símbolos ni 'The'. Calico está en Initiator (confirmado por el usuario el 2026-11-12).",
+  "umbral_rol": 0.25,
+  "roles": {
+    "Carry": [
+      "Wraith",
+      "Venator",
+      "Rat King",
+      "Mina",
+      "Warden",
+      "Vyper",
+      "Seven",
+      "Lady Geist"
+    ],
+    "Off-carry": [
+      "Pocket",
+      "Celeste",
+      "Mina",
+      "Infernus",
+      "Mirage",
+      "Shiv"
+    ],
+    "Support": [
+      "Nurse Harrow",
+      "Paige",
+      "Rem",
+      "Dynamo",
+      "Viscous",
+      "The Doorman",
+      "Sinclair",
+      "Kelvin",
+      "Ivy",
+      "Mo & Krill",
+      "Solomon",
+      "McGinnis",
+      "Vindicta",
+      "Graves"
+    ],
+    "Frontline": [
+      "Yamato",
+      "Apollo",
+      "Silver",
+      "Abrams",
+      "Drifter",
+      "Baba",
+      "Mo & Krill",
+      "Victor",
+      "Billy",
+      "Shiv"
+    ],
+    "Initiator": [
+      "Haze",
+      "Grey Talon",
+      "Lash",
+      "Violet",
+      "Deadman Danny",
+      "Calico"
+    ],
+    "Catcher": [
+      "Bebop",
+      "Mo & Krill",
+      "Paradox",
+      "Holliday",
+      "Lash"
+    ]
+  }
+}

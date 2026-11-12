@@ -1,0 +1,12 @@
+# Datos locales (base de datos, partidas descargadas, caché de la API)
+data/
+
+# Configuración local: puede contener la API key
+config.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Herramientas
+.claude/settings.local.json
