@@ -920,3 +920,7 @@ button.stat-tile:hover { transform: translateY(-2px); box-shadow: var(--e2); bac
   body { background: #fff; }
   .panel { box-shadow: none; border: 1px solid #ccc; }
 }
+
+/* Evita desbordes: campos de formulario nunca más anchos que su contenedor */
+input, select, textarea { max-width: 100%; min-width: 0; box-sizing: border-box; }
+table.data th, table.data td { padding-left: 5px; padding-right: 5px; }

@@ -94,7 +94,7 @@ export async function render(root, ctx) {
       sort: p => p.rank ?? (p.badge ? 10000 - p.badge : null),
       render: p => el('span', { class: 'rank-cell' }, el('span', { class: 'pos' + (p.rank && p.rank <= 3 ? ' top' : '') }, p.rank ? '#' + p.rank : '–'), p.badge ? rankEmblem(p.badge, ranks, { label: false }) : null) },
     { key: 'name', label: 'Jugador', keep: true, sort: p => p.name.toLowerCase(), render: p => playerCell(p, hero(p), heroById) },
-    { key: 'role', label: 'Rol', sortable: false, keep: true, render: p => roleChips(p) },
+    { key: 'role', label: 'Rol', sortable: false, keep: true, render: p => roleChips(p, { max: 1 }) },
     { key: 'matches', label: 'Partidas', num: true, sort: p => p.stats.matches, render: p => fmt.int(p.stats.matches) },
     { key: 'winrate', label: 'WR', num: true, title: 'Winrate (con intervalo de confianza del 95 %). Se ordena por el winrate ajustado por muestra.',
       sort: p => p.stats.wr_adj, render: p => wrBar(p.stats.winrate, { lo: p.stats.wr_lo, hi: p.stats.wr_hi, muted: muted(p), n: p.stats.matches }) },

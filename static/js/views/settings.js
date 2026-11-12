@@ -95,7 +95,7 @@ export async function render(root, ctx) {
     calOut));
 
   // ------------------------------------------------------------- importación
-  const path = el('input', { 'aria-label': 'Ruta del scouting.db antiguo', placeholder: 'C:\\ruta\\a\\scouting.db', style: { minWidth: '360px' } });
+  const path = el('input', { 'aria-label': 'Ruta del scouting.db antiguo', placeholder: 'C:\\ruta\\a\\scouting.db', style: { width: 'min(360px, 100%)' } });
   const impOut = el('pre', { class: 'small' });
   const doImport = dry => async () => {
     try { const r = await api.post('/api/import-old', { path: path.value, dry_run: dry }); impOut.textContent = JSON.stringify(r, null, 1); if (!dry) { invalidatePlayers(); toast('Importado'); } } catch (e) { toast(e.message, true); }
