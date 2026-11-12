@@ -11,7 +11,7 @@ export async function renderExplorer(root, matchId) {
   const data = await fetch(`/api/matches/${matchId}/raw`).then(r => r.json());
   root.innerHTML = '';
   let path = [];
-  const search = el('input', { type: 'search', placeholder: 'Buscar campo o valor (p. ej. "heal", "midboss", "Koth")', style: { minWidth: '320px' } });
+  const search = el('input', { type: 'search', 'aria-label': 'Buscar en el JSON de la partida', placeholder: 'Buscar campo o valor (p. ej. "heal", "midboss", "Koth")', style: { minWidth: '320px' } });
   const crumbs = el('div', { class: 'crumbs' });
   const tree = el('div', { class: 'tree' });
   const view = el('div');

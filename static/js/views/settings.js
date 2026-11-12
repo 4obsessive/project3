@@ -14,14 +14,16 @@ export async function render(root, ctx) {
     batch_size: el('input', { type: 'number', min: 1, max: 200, value: cfg.batch_size }),
     api_key: el('input', { type: 'password', value: cfg.api_key, placeholder: 'opcional (más margen de rate limit)', autocomplete: 'off' }),
   };
+  for (const [k, i] of Object.entries(f)) i.id = 'cfg-' + k;
+  f.extra_leaderboard_ids.setAttribute('aria-describedby', 'cfg-extra-help');
   root.append(el('div', { class: 'panel' }, el('h3', {}, 'Actualización'),
     el('div', { class: 'form-grid', style: { maxWidth: '640px' } },
-      'Región', f.region,
-      'Leaderboards extra', el('div', {}, f.extra_leaderboard_ids, el('div', { class: 'muted small' }, 'IDs de temporadas pasadas que también aportan jugadores (1001 = Beta Season 1, 1000 jugadores en Europa). La temporada actual se incluye siempre.')),
-      'Cada (horas)', f.update_interval_hours,
-      'Stats de los últimos (días)', f.stats_days,
-      'Cuentas por petición', f.batch_size,
-      'API key', f.api_key),
+      el('label', { for: 'cfg-region' }, 'Región'), f.region,
+      el('label', { for: 'cfg-extra_leaderboard_ids' }, 'Leaderboards extra'), el('div', {}, f.extra_leaderboard_ids, el('div', { class: 'muted small', id: 'cfg-extra-help' }, 'IDs de temporadas pasadas que también aportan jugadores (1001 = Beta Season 1, 1000 jugadores en Europa). La temporada actual se incluye siempre.')),
+      el('label', { for: 'cfg-update_interval_hours' }, 'Cada (horas)'), f.update_interval_hours,
+      el('label', { for: 'cfg-stats_days' }, 'Stats de los últimos (días)'), f.stats_days,
+      el('label', { for: 'cfg-batch_size' }, 'Cuentas por petición'), f.batch_size,
+      el('label', { for: 'cfg-api_key' }, 'API key'), f.api_key),
     el('div', { class: 'row', style: { marginTop: '8px' } }, el('button', { class: 'primary', onclick: async () => {
       try {
         await api.post('/api/config', {
@@ -36,7 +38,7 @@ export async function render(root, ctx) {
   const roleInputs = {};
   const rolesBox = el('div', { class: 'form-grid' });
   const addRole = (name, heroes) => {
-    const n = el('input', { value: name }), h = el('textarea', { style: { minHeight: '40px' } }, heroes.join(', '));
+    const n = el('input', { value: name, 'aria-label': 'Nombre del rol' }), h = el('textarea', { 'aria-label': `Héroes del rol ${name}`, style: { minHeight: '40px' } }, heroes.join(', '));
     roleInputs[Math.random()] = [n, h];
     rolesBox.append(n, h);
   };
@@ -60,9 +62,9 @@ export async function render(root, ctx) {
     el('p', { class: 'muted small' }, 'Inferido de los tiempos reales y coherente con /v1/assets/map (carriles 1, 3 y 4). En el mapa actual no existen 2, 6 ni 13. Corrígelo aquí si una partida no encaja.'),
     dataTable([
       { key: 'id', label: 'ID', num: true, sort: r => +r.id },
-      { key: 'tipo', label: 'Tipo', render: r => (inputs[r.id] ??= {}).tipo = el('input', { value: r.tipo }) },
-      { key: 'carril', label: 'Carril', render: r => inputs[r.id].carril = el('input', { value: r.carril ?? '', style: { width: '60px' } }) },
-      { key: 'n', label: 'Nº', render: r => inputs[r.id].n = el('input', { value: r.n ?? '', style: { width: '50px' } }) },
+      { key: 'tipo', label: 'Tipo', render: r => (inputs[r.id] ??= {}).tipo = el('input', { value: r.tipo, 'aria-label': `Tipo del objetivo ${r.id}` }) },
+      { key: 'carril', label: 'Carril', render: r => inputs[r.id].carril = el('input', { 'aria-label': `Carril del objetivo ${r.id}`, value: r.carril ?? '', style: { width: '60px' } }) },
+      { key: 'n', label: 'Nº', render: r => inputs[r.id].n = el('input', { 'aria-label': `Número del objetivo ${r.id}`, value: r.n ?? '', style: { width: '50px' } }) },
     ], omRows, { sortKey: 'id', asc: true }),
     el('button', { class: 'primary', style: { marginTop: '8px' }, onclick: async () => {
       const objetivos = {};
@@ -91,7 +93,7 @@ export async function render(root, ctx) {
     calOut));
 
   // ------------------------------------------------------------- importación
-  const path = el('input', { placeholder: 'C:\\ruta\\a\\scouting.db', style: { minWidth: '360px' } });
+  const path = el('input', { 'aria-label': 'Ruta del scouting.db antiguo', placeholder: 'C:\\ruta\\a\\scouting.db', style: { minWidth: '360px' } });
   const impOut = el('pre', { class: 'small' });
   const doImport = dry => async () => {
     try { const r = await api.post('/api/import-old', { path: path.value, dry_run: dry }); impOut.textContent = JSON.stringify(r, null, 1); if (!dry) { invalidatePlayers(); toast('Importado'); } } catch (e) { toast(e.message, true); }

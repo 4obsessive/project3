@@ -296,6 +296,11 @@ def overview(mi, hero_names=None):
             "kills": p.get("kills"), "deaths": p.get("deaths"), "assists": p.get("assists"),
             "net_worth": p.get("net_worth"), "last_hits": p.get("last_hits"), "denies": p.get("denies"), "level": p.get("level"),
             "comeback_gold_koth": final_custom_stat(p, koth_id),
+            "mvp_rank": p.get("mvp_rank"),
+            "player_damage": ((p.get("stats") or [{}])[-1] or {}).get("player_damage"),
+            # curva de net worth [[s, oro], ...] para la gráfica de diferencia de oro
+            "nw_timeline": [[x.get("time_stamp_s"), x.get("net_worth")] for x in (p.get("stats") or [])
+                            if x.get("time_stamp_s") is not None and x.get("net_worth") is not None],
         } for p in ps],
         "objectives": objectives(mi, objs, lanes),
         "midboss": midboss(mi),

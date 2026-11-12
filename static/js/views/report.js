@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { el, fmt, dataTable, toast, spinner, store } from '../util.js';
+import { el, fmt, dataTable, toast, spinner, store, errorBox } from '../util.js';
 import { renderSection } from '../blocks.js';
 
 export async function render(root, ctx) {
@@ -8,7 +8,7 @@ export async function render(root, ctx) {
   if (ctx.query.team) saved.team = ctx.query.team;
   const teamSel = el('select', {}, el('option', { value: '' }, '— solo cuentas extra —'), teams.map(t => el('option', { value: t.team, selected: t.team === saved.team }, `${t.team} (${t.players.length})`)));
   const extra = el('input', { value: saved.extra, placeholder: 'cuentas extra separadas por comas', style: { minWidth: '280px' } });
-  const ids = el('textarea', { placeholder: 'IDs de partida (uno por línea o separados por comas)' }, saved.ids);
+  const ids = el('textarea', { 'aria-label': 'IDs de partida', placeholder: 'IDs de partida (uno por línea o separados por comas)' }, saved.ids);
   const win = el('input', { type: 'number', value: saved.window, min: 10, max: 600, style: { width: '70px' } });
   const norm = el('input', { type: 'checkbox', checked: saved.normalize });
   const margin = el('input', { type: 'number', value: saved.margin, min: 0, step: 500, style: { width: '80px' } });
@@ -33,13 +33,13 @@ export async function render(root, ctx) {
           el('button', { onclick: () => { ids.value = r.matches.map(m => m.match_id).join('\n'); persist(); toast(`${r.matches.length} partidas añadidas`); } }, 'Usar todas'),
           el('button', { onclick: () => { ids.value = r.matches.slice(0, 20).map(m => m.match_id).join('\n'); persist(); } }, 'Usar las 20 más recientes')),
         dataTable([
-          { key: 'add', label: '', sortable: false, render: m => { const c = el('input', { type: 'checkbox', checked: chosen.has(String(m.match_id)) }); c.addEventListener('change', () => { const s = new Set(parseIds()); c.checked ? s.add(String(m.match_id)) : s.delete(String(m.match_id)); ids.value = [...s].join('\n'); persist(); }); return c; } },
+          { key: 'add', label: '', sortable: false, render: m => { const c = el('input', { type: 'checkbox', 'aria-label': `Usar partida ${m.match_id}`, checked: chosen.has(String(m.match_id)) }); c.addEventListener('change', () => { const s = new Set(parseIds()); c.checked ? s.add(String(m.match_id)) : s.delete(String(m.match_id)); ids.value = [...s].join('\n'); persist(); }); return c; } },
           { key: 'match_id', label: 'Partida' }, { key: 'start_time', label: 'Fecha', fmt: 'date' }, { key: 'duration_s', label: 'Duración', fmt: 'mmss' },
           { key: 'side', label: 'Lado', render: m => el('span', { class: `tag t${m.side}` }, ctx.teamNames[m.side]) },
           { key: 'roster_players', label: 'De la plantilla' }, { key: 'won', label: 'Resultado', render: m => m.won ? 'Victoria' : 'Derrota' },
           { key: 'stored', label: 'Guardada', render: m => m.stored ? 'sí' : '' },
         ], r.matches, { sortKey: 'start_time', maxHeight: '300px' }));
-    } catch (e) { recentBox.innerHTML = ''; toast(e.message, true); }
+    } catch (e) { recentBox.innerHTML = ''; recentBox.append(errorBox(e.message, findRecent, 'No se pudieron buscar partidas')); }
   }
 
   async function run() {
@@ -53,7 +53,7 @@ export async function render(root, ctx) {
         params: { midboss_window_s: +win.value, normalize: norm.checked, nw_margin: +margin.value },
       });
       show(r);
-    } catch (e) { out.innerHTML = ''; toast(e.message, true); }
+    } catch (e) { out.innerHTML = ''; out.append(errorBox(e.message, run, 'No se pudo generar el informe')); }
   }
 
   function show(r) {
@@ -72,13 +72,13 @@ export async function render(root, ctx) {
         { key: 'counts', label: 'Plantilla en 0 / 1', render: s => `${s.roster_counts[0]} / ${s.roster_counts[1]}` },
         { key: 'auto', label: 'Detectado', render: s => s.auto == null ? '—' : TN[s.auto] },
         { key: 'side', label: 'Usado', render: s => {
-          const sel = el('select', {}, el('option', { value: '' }, 'auto'), [0, 1].map(t => el('option', { value: t, selected: s.source === 'manual' && s.side === t }, TN[t])));
+          const sel = el('select', { 'aria-label': `Lado de la partida ${s.match_id}` }, el('option', { value: '' }, 'auto'), [0, 1].map(t => el('option', { value: t, selected: s.source === 'manual' && s.side === t }, TN[t])));
           sel.addEventListener('change', () => { if (sel.value === '') delete overrides[s.match_id]; else overrides[s.match_id] = +sel.value; });
           return sel;
         } },
       ], sideRows),
       el('button', { onclick: run }, 'Recalcular con estos lados')));
-    const toc = el('div', { class: 'row small no-print' }, r.sections.map(s => el('a', { href: '#', onclick: e => { e.preventDefault(); document.getElementById('sec-' + s.id)?.scrollIntoView({ behavior: 'smooth' }); } }, s.title)));
+    const toc = el('nav', { class: 'row small no-print', 'aria-label': 'Índice del informe' }, r.sections.map(s => el('button', { type: 'button', class: 'linkbtn', onclick: () => { const t = document.getElementById('sec-' + s.id); if (t) { t.tabIndex = -1; t.scrollIntoView({ behavior: 'smooth' }); t.focus({ preventScroll: true }); } } }, s.title)));
     head.append(toc, el('button', { class: 'no-print', onclick: () => window.print() }, 'Imprimir / PDF'));
     out.append(head, ...r.sections.map(renderSection));
   }

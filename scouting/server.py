@@ -22,12 +22,48 @@ mimetypes.add_type("image/avif", ".avif")
 mimetypes.add_type("image/webp", ".webp")
 
 MAX_BODY = 50 * 1024 * 1024
+CSP = ("default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+       "frame-ancestors 'none'; base-uri 'none'")
 
 
 class HttpError(Exception):
     def __init__(self, status, message):
         super().__init__(message)
         self.status = status
+
+
+def _qint(req, name, default):
+    try:
+        return int(req.query.get(name, [default])[0])
+    except (TypeError, ValueError):
+        raise HttpError(400, f"Parámetro no válido: {name}")
+
+
+def _is_int(v):
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def validate_config(changes):
+    """Valida los cambios de /api/config; lanza HttpError(400) si algo no cuadra."""
+    if "update_interval_hours" in changes:
+        v = changes["update_interval_hours"]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not (1 <= v <= 720):
+            raise HttpError(400, "update_interval_hours debe ser un número entre 1 y 720")
+        changes["update_interval_hours"] = float(v)
+    for k, lo, hi in (("stats_days", 1, 365), ("batch_size", 1, 1000)):
+        if k in changes:
+            v = changes[k]
+            if not _is_int(v) or not (lo <= v <= hi):
+                raise HttpError(400, f"{k} debe ser un entero entre {lo} y {hi}")
+    if "extra_leaderboard_ids" in changes:
+        v = changes["extra_leaderboard_ids"]
+        if not isinstance(v, list) or not all(_is_int(x) for x in v):
+            raise HttpError(400, "extra_leaderboard_ids debe ser una lista de enteros")
+    if "api_key" in changes:
+        v = changes["api_key"]
+        if not isinstance(v, str) or len(v) > 200:
+            raise HttpError(400, "api_key debe ser texto de 200 caracteres como máximo")
+    return changes
 
 
 class App:
@@ -172,7 +208,7 @@ class App:
         return [{"id": int(k), "name": v, "image": imgs.get(k)} for k, v in sorted(names.items(), key=lambda kv: kv[1])]
 
     def climbers(self, req):
-        days = int(req.query.get("days", ["7"])[0])
+        days = _qint(req, "days", "7")
         return analysis.climbers(self.con(), days)
 
     # ---------------------------------------------------------------- equipos
@@ -188,8 +224,8 @@ class App:
     def team_recent(self, req):
         team = req.query.get("team", [""])[0]
         extra = [to_account_id(x) for x in req.query.get("extra", [""])[0].split(",") if to_account_id(x)]
-        minp = int(req.query.get("min_players", ["3"])[0])
-        days = int(req.query.get("days", ["60"])[0])
+        minp = _qint(req, "min_players", "3")
+        days = _qint(req, "days", "60")
         if not team and not extra:
             raise HttpError(400, "Falta el equipo")
         return analysis.recent_team_matches(self.con(), self.client, team, extra, minp, days)
@@ -208,6 +244,7 @@ class App:
             changes.pop("api_key")
         if "region" in changes and changes["region"] not in ("Europe", "Asia", "NAmerica", "SAmerica", "Oceania"):
             raise HttpError(400, "Región no válida")
+        validate_config(changes)
         cfg = config.update(changes)
         if "api_key" in changes:
             self.client.api_key = cfg["api_key"]
@@ -280,7 +317,7 @@ class App:
         return out
 
     def match_positions(self, req, mid):
-        step = max(1, int(req.query.get("step", ["1"])[0]))
+        step = max(1, _qint(req, "step", "1"))
         return matches.decode_positions(self._load(mid)["match_info"], step)
 
     def match_raw(self, req, mid):
@@ -340,10 +377,22 @@ class App:
         if body.get("official"):
             cal = dict(minimap.OFFICIAL)
         else:
-            cal = body.get("calibration") or {}
+            raw = body.get("calibration") or {}
+            if not isinstance(raw, dict):
+                raise HttpError(400, "Calibración no válida")
+            cal = {}
             for k in ("x_min", "x_max", "y_min", "y_max"):
-                if not isinstance(cal.get(k), (int, float)):
+                v = raw.get(k)
+                if isinstance(v, bool) or not isinstance(v, (int, float)):
                     raise HttpError(400, f"Falta {k}")
+                cal[k] = v
+            for k in ("invert_x", "invert_y"):
+                if k in raw:
+                    if not isinstance(raw[k], bool):
+                        raise HttpError(400, f"{k} debe ser booleano")
+                    cal[k] = raw[k]
+            if not (cal["x_min"] < cal["x_max"] and cal["y_min"] < cal["y_max"]):
+                raise HttpError(400, "Se requiere x_min < x_max e y_min < y_max")
         minimap.save_calibration(cal)
         return cal
 
@@ -380,9 +429,11 @@ class App:
 
     def import_old(self, req):
         from . import importer
-        path = (req.json().get("path") or "").strip().strip('"')
-        if not path or not os.path.exists(path):
+        path = str(req.json().get("path") or "").strip().strip('"')
+        if not path or not os.path.isfile(path):
             raise HttpError(400, "No existe ese archivo")
+        if not path.lower().endswith(".db"):
+            raise HttpError(400, "El archivo debe tener extensión .db")
         dry = bool(req.json().get("dry_run"))
         return importer.import_db(self.con(), path, dry_run=dry)
 
@@ -416,6 +467,7 @@ def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
         server_version = "DeadlockScouting/1.0"
         protocol_version = "HTTP/1.1"
+        timeout = 30
 
         def log_message(self, fmt, *args):
             pass  # silencioso; los errores se imprimen aparte
@@ -429,6 +481,9 @@ def make_handler(app):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", CSP)
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("Cache-Control", "no-store" if ctype.startswith("application/json") else "no-cache")
             if gz:
                 self.send_header("Content-Encoding", "gzip")
@@ -453,6 +508,8 @@ def make_handler(app):
                 return
             u = urllib.parse.urlsplit(self.path)
             if u.path.startswith("/api/"):
+                if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
+                    return self._error(403, "Petición entre sitios no permitida")
                 return self._api("GET", u, b"")
             return self._static(u.path)
 
@@ -467,7 +524,12 @@ def make_handler(app):
             origin = self.headers.get("Origin")
             if origin and origin.lower() not in allowed_origins:
                 return self._error(403, "Origen no permitido")
-            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return self._error(400, "Content-Length no válido")
+            if n < 0:
+                return self._error(400, "Content-Length no válido")
             if n > MAX_BODY:
                 return self._error(413, "Cuerpo demasiado grande")
             body = self.rfile.read(n) if n else b""
@@ -491,7 +553,8 @@ def make_handler(app):
                     return self._error(502, f"Error de la API de Deadlock: {e}")
                 except Exception as e:
                     traceback.print_exc()
-                    return self._error(500, f"{type(e).__name__}: {e}")
+                    print(f"[server] error en {method} {u.path}: {type(e).__name__}: {e}")
+                    return self._error(500, "Error interno del servidor")
             self._error(404, "Ruta no encontrada")
 
         def _static(self, path):

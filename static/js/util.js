@@ -64,19 +64,36 @@ export function dataTable(columns, rows, opts = {}) {
   let sortKey = opts.sortKey ?? null, asc = opts.asc ?? false;
   const wrap = el('div', { class: 'tablewrap', style: opts.maxHeight ? { maxHeight: opts.maxHeight } : null });
   const table = el('table', { class: 'data' });
+  if (opts.label) table.setAttribute('aria-label', opts.label);
   wrap.append(table);
   const sortVal = (c, r) => c.sort ? c.sort(r) : r[c.key];
+  // columna que hace de enlace accesible cuando la fila es clicable
+  const linkKey = opts.linkKey ?? (columns.find(c => ['name', 'pname'].includes(c.key)) || columns[0])?.key;
+  let more = null;
+  const allColumns = columns;
+  const isEmpty = v => v == null || v === '' || (typeof v === 'number' && !isFinite(v));
   function render() {
     table.innerHTML = '';
+    more?.remove(); more = null;
+    // opts.hideEmpty: oculta las columnas sin ningún valor en las filas actuales
+    columns = opts.hideEmpty && rows.length ? allColumns.filter(c => c.keep || rows.some(r => !isEmpty(sortVal(c, r)))) : allColumns;
+    wrap.hiddenColumns = allColumns.length - columns.length;
     const thead = el('thead');
     const tr = el('tr');
     for (const c of columns) {
       const isNum = c.num ?? (rows.length && typeof sortVal(c, rows[0]) === 'number');
-      const th = el('th', { class: [c.sortable === false ? '' : 'sortable', isNum ? 'num' : '', sortKey === c.key ? 'sorted' : '', sortKey === c.key && asc ? 'asc' : '', c.wrap ? 'wrap' : ''].join(' '), title: c.title || null }, c.label);
-      if (c.sortable !== false) th.addEventListener('click', () => {
-        if (sortKey === c.key) asc = !asc; else { sortKey = c.key; asc = !isNum; }
-        render();
-      });
+      const sortable = c.sortable !== false;
+      const sorted = sortKey === c.key;
+      const th = el('th', { scope: 'col', class: [sortable ? 'sortable' : '', isNum ? 'num' : '', sorted ? 'sorted' : '', sorted && asc ? 'asc' : '', c.wrap ? 'wrap' : ''].join(' '), title: c.title || null,
+        'aria-sort': sortable ? (sorted ? (asc ? 'ascending' : 'descending') : 'none') : null });
+      if (sortable) {
+        th.append(el('button', { type: 'button', class: 'sort', onclick: () => {
+          if (sortKey === c.key) asc = !asc; else { sortKey = c.key; asc = !isNum; }
+          render();
+          table.querySelector(`th[data-key="${CSS.escape(String(c.key))}"] button`)?.focus();
+        } }, c.label || el('span', { class: 'sr-only' }, 'columna')));
+        th.dataset.key = c.key;
+      } else th.append(c.label || '');
       tr.append(th);
     }
     thead.append(tr);
@@ -93,18 +110,22 @@ export function dataTable(columns, rows, opts = {}) {
     }
     const tbody = el('tbody');
     const limit = opts.limit || 2000;
+    if (!data.length) tbody.append(el('tr', {}, el('td', { class: 'empty-row', colspan: columns.length }, opts.emptyText || 'Sin resultados')));
     for (const r of data.slice(0, limit)) {
       const row = el('tr', { class: opts.onRowClick ? 'clickable' : '' });
-      if (opts.onRowClick) row.addEventListener('click', () => opts.onRowClick(r));
+      if (opts.onRowClick) row.addEventListener('click', e => { if (!e.target.closest('a, button, input, select, textarea')) opts.onRowClick(r); });
       for (const c of columns) {
-        const v = c.render ? c.render(r) : formatValue(r[c.key], c.fmt);
+        let v = c.render ? c.render(r) : formatValue(r[c.key], c.fmt);
+        if (opts.onRowClick && c.key === linkKey) v = el('button', { type: 'button', class: 'linkbtn', onclick: () => opts.onRowClick(r) }, v);
         const isNum = c.num ?? typeof r[c.key] === 'number';
-        row.append(el('td', { class: (isNum ? 'num ' : '') + (c.wrap ? 'wrap' : '') }, v));
+        const td = el('td', { class: (isNum ? 'num ' : '') + (c.wrap ? 'wrap ' : '') + (c.cellClass ? c.cellClass(r) || '' : '') }, v);
+        row.append(td);
       }
       tbody.append(row);
     }
     table.append(tbody);
-    if (data.length > limit) wrap.append(el('div', { class: 'muted small' }, `Mostrando ${limit} de ${data.length}`));
+    wrap.classList.toggle('scroll', !opts.maxHeight && data.length > 25);
+    if (data.length > limit) { more = el('div', { class: 'muted small' }, `Mostrando ${limit} de ${data.length}`); wrap.append(more); }
   }
   render();
   wrap.update = newRows => { rows = newRows; render(); };
@@ -112,7 +133,7 @@ export function dataTable(columns, rows, opts = {}) {
 }
 
 export function csvDownload(name, columns, rows) {
-  const esc = v => { const s = v == null ? '' : String(v); return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const esc = v => { let s = v == null ? '' : String(v); if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const lines = [columns.map(c => esc(c.label)).join(';')];
   for (const r of rows) lines.push(columns.map(c => esc(c.csv ? c.csv(r) : r[c.key])).join(';'));
   downloadBlob(name, new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
@@ -132,7 +153,19 @@ export function toast(msg, isError = false) {
   toastTimer = setTimeout(() => (t.hidden = true), isError ? 7000 : 3500);
 }
 
-export function spinner(text = 'Cargando…') { return el('div', { class: 'empty' }, el('span', { class: 'spinner' }), ' ', text); }
+export function spinner(text = 'Cargando…') { return el('div', { class: 'empty', role: 'status' }, el('span', { class: 'spinner', 'aria-hidden': 'true' }), ' ', text); }
+
+/** Bloque de error común con botón «Reintentar». */
+export function errorBox(message, onRetry, title = 'No se pudo cargar') {
+  return el('div', { class: 'panel error-box', role: 'alert' }, el('h3', {}, title), el('p', {}, message),
+    onRetry ? el('button', { type: 'button', onclick: onRetry }, 'Reintentar') : null);
+}
+
+/** Lee un token de color de :root (las gráficas y el mapa comparten la paleta del CSS). */
+export function cssVar(name, fallback = '') {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
 
 export const store = {
   get(k, d) { try { const v = localStorage.getItem('dls.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -141,4 +174,26 @@ export const store = {
 
 export function teamTag(team, names) {
   return el('span', { class: `tag t${team}` }, names ? names[team] : `Equipo ${team}`);
+}
+
+/**
+ * Escala de color por percentil: devuelve una función valor -> clase `cs cs-0..4`
+ * (0 = peor, 4 = mejor). Con menos de 3 valores no colorea.
+ */
+export function scaler(values, higherBetter = true) {
+  const v = values.filter(x => x != null && isFinite(x)).sort((a, b) => a - b);
+  return x => {
+    if (x == null || !isFinite(x) || v.length < 3) return '';
+    let lo = 0; while (lo < v.length && v[lo] < x) lo++;
+    const b = Math.min(4, Math.floor((lo / (v.length - 1)) * 4.999));
+    return 'cs cs-' + (higherBetter ? b : 4 - b);
+  };
+}
+
+/** Barra horizontal 0..max con el valor al lado. */
+export function meter(value, max, { label, cls = '', text } = {}) {
+  const pct = value == null || !max ? 0 : Math.max(0, Math.min(100, 100 * value / max));
+  return el('span', { class: 'meter ' + cls, title: label || null },
+    el('span', { class: 'meter-track', 'aria-hidden': 'true' }, el('span', { class: 'meter-fill', style: { width: pct + '%' } })),
+    el('span', { class: 'meter-val' }, text ?? (value == null ? '–' : String(value))));
 }

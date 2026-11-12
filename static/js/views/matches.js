@@ -1,13 +1,15 @@
 import { api } from '../api.js';
-import { el, fmt, dataTable, toast, spinner, csvDownload, store } from '../util.js';
+import { el, fmt, dataTable, toast, spinner, csvDownload, store, errorBox } from '../util.js';
 import { MapView, COLORS, legend, loadMapInfo } from '../map.js';
 import { timeline } from '../charts.js';
 import { renderExplorer } from './explorer.js';
 import { openProfile } from './profile.js';
+import { icon } from '../icons.js';
+import { matchRow } from './home.js';
 
 export async function render(root, ctx) {
-  const idInput = el('input', { placeholder: 'ID de partida', style: { width: '140px' } });
-  const fileInput = el('input', { type: 'file', accept: '.json,application/json' });
+  const idInput = el('input', { id: 'match-id', inputmode: 'numeric', placeholder: 'ID de partida', 'aria-label': 'ID de partida', style: { width: '140px' } });
+  const fileInput = el('input', { type: 'file', id: 'match-file', class: 'sr-only', accept: '.json,application/json' });
   const list = el('div');
   const detail = el('div');
   const load = async () => {
@@ -29,7 +31,8 @@ export async function render(root, ctx) {
   root.append(el('div', { class: 'split' },
     el('div', {},
       el('div', { class: 'panel' }, el('h3', {}, 'Cargar partida'), el('div', { class: 'row' }, idInput, btn),
-        el('div', { class: 'muted small', style: { margin: '8px 0 4px' } }, 'o subir su JSON (metadata de deadlock-api):'), fileInput),
+        el('div', { class: 'muted small', style: { margin: '10px 0 4px' } }, 'o sube su JSON (metadata de deadlock-api):'),
+        el('label', { for: 'match-file', class: 'filepick' }, icon('upload'), el('span', {}, 'Elegir archivo JSON…')), fileInput),
       el('div', { class: 'panel' }, el('h3', {}, 'Guardadas'), list)),
     detail));
 
@@ -38,34 +41,28 @@ export async function render(root, ctx) {
     list.innerHTML = '';
     if (!ms.length) list.append(el('div', { class: 'muted small' }, 'Ninguna todavía.'));
     for (const m of ms) {
-      list.append(el('div', { class: 'row', style: { justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--line)' } },
-        el('a', { href: `#partidas/${m.match_id}` }, m.match_id),
-        el('span', { class: 'muted small' }, `${fmt.date(m.start_time)} · ${fmt.mmss(m.duration_s)}`)));
+      list.append(matchRow(m));
     }
   }
   await refresh();
   const id = ctx.params[0];
   if (id) showMatch(detail, id, ctx);
-  else detail.append(el('div', { class: 'panel empty' }, 'Carga una partida por ID o sube su JSON.'));
+  else detail.append(el('div', { class: 'panel empty' }, icon('partidas', 'big'), el('p', {}, 'Elige una partida guardada o carga una nueva por ID para ver su marcador, la diferencia de oro y el minimapa.')));
 }
 
 async function showMatch(root, id, ctx) {
   root.innerHTML = ''; root.append(spinner('Cargando partida…'));
   let m;
-  try { m = await api.get(`/api/matches/${id}`); } catch (e) { root.innerHTML = ''; root.append(el('div', { class: 'panel' }, e.message)); return; }
+  try { m = await api.get(`/api/matches/${id}`); } catch (e) { root.innerHTML = ''; root.append(errorBox(e.message, () => showMatch(root, id, ctx), 'No se pudo cargar la partida')); return; }
   root.innerHTML = '';
   const TN = m.team_names;
   const tname = t => `${TN[t]} (${t})`;
   const verified = m.team_names_verified ? '' : ' · nombres de lado según fuentes de terceros (equipo 0 = base abajo, verificado)';
-  const head = el('div', { class: 'panel' },
-    el('div', { class: 'row', style: { justifyContent: 'space-between' } },
-      el('h2', {}, `Partida ${m.match_id}`),
-      el('div', { class: 'row' },
-        el('button', { onclick: async () => { if (!confirm('¿Borrar la partida guardada?')) return; await api.post(`/api/matches/${m.match_id}/delete`); location.hash = '#partidas'; } }, 'Borrar'))),
-    el('div', { class: 'muted' }, `${fmt.datetime(m.start_time)} · ${fmt.mmss(m.duration_s)} · gana `, el('span', { class: `tag t${m.winning_team}` }, tname(m.winning_team)), el('span', { class: 'small' }, verified)));
-  const tabs = el('div', { class: 'tabs' });
-  const body = el('div', { class: 'panel' });
-  root.append(head, tabs, body);
+  const head = scoreboard(m, TN, verified);
+  const gold = goldPanel(m, tname);
+  const tabs = el('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Secciones de la partida' });
+  const body = el('div', { class: 'panel', role: 'tabpanel', id: 'match-tabpanel', tabindex: '0' });
+  root.append(head, gold, tabs, body);
   const views = {
     'Resumen': () => resumen(body, m, tname, ctx),
     'Objetivos': () => objetivos(body, m, tname),
@@ -74,26 +71,149 @@ async function showMatch(root, id, ctx) {
     'Explorador': () => renderExplorer(body, m.match_id),
   };
   let current = store.get('matchTab', 'Resumen');
+  if (!views[current]) current = 'Resumen';
+  const select = b => {
+    current = b.dataset.tab; store.set('matchTab', current);
+    for (const x of tabs.children) { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-selected', String(on)); x.tabIndex = on ? 0 : -1; }
+    body.setAttribute('aria-labelledby', b.id);
+    body.innerHTML = ''; views[current]();
+  };
   for (const name of Object.keys(views)) {
-    const b = el('button', { class: name === current ? 'active' : '', onclick: () => { current = name; store.set('matchTab', name); [...tabs.children].forEach(x => x.classList.toggle('active', x === b)); body.innerHTML = ''; views[name](); } }, name);
+    const on = name === current;
+    const b = el('button', { type: 'button', role: 'tab', id: 'tab-' + name.toLowerCase(), 'aria-controls': 'match-tabpanel', 'aria-selected': String(on), tabindex: on ? '0' : '-1', class: on ? 'active' : '', onclick: () => select(b) }, name);
+    b.dataset.tab = name;
     tabs.append(b);
   }
-  (views[current] || views['Resumen'])();
+  // flechas para moverse entre pestañas (patrón ARIA tabs)
+  tabs.addEventListener('keydown', e => {
+    const list = [...tabs.children], i = list.indexOf(document.activeElement);
+    if (i < 0) return;
+    const j = e.key === 'ArrowRight' ? (i + 1) % list.length : e.key === 'ArrowLeft' ? (i - 1 + list.length) % list.length : e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : -1;
+    if (j < 0) return;
+    e.preventDefault(); list[j].focus(); select(list[j]);
+  });
+  body.setAttribute('aria-labelledby', 'tab-' + current.toLowerCase());
+  views[current]();
+}
+
+const pname = p => p.name || `Cuenta ${p.account_id}`;
+const kdaRatio = p => (p.kills + p.assists) / Math.max(1, p.deaths);
+function mvpOf(m) {
+  const r1 = m.players.find(p => p.mvp_rank === 1);
+  if (r1) return r1;
+  return m.players.slice().sort((a, b) => kdaRatio(b) * b.net_worth - kdaRatio(a) * a.net_worth)[0];
+}
+const teamSum = (m, t, k) => m.players.filter(p => p.team === t).reduce((a, p) => a + (p[k] || 0), 0);
+
+function scoreboard(m, TN, verified) {
+  const side = t => el('div', { class: `sb-side t${t}` + (m.winning_team === t ? ' won' : '') },
+    el('div', { class: 'sb-team' }, el('span', { class: `tag t${t}` }, `Equipo ${t}`), el('b', {}, TN[t])),
+    el('div', { class: 'sb-kills' }, String(teamSum(m, t, 'kills'))),
+    el('div', { class: 'sb-meta' }, `${fmt.int(teamSum(m, t, 'net_worth'))} oro`),
+    m.winning_team === t ? el('span', { class: 'sb-win' }, icon('trophy'), 'Victoria') : el('span', { class: 'sb-lose' }, 'Derrota'));
+  return el('section', { class: 'panel scoreboard', 'aria-label': 'Marcador' },
+    el('div', { class: 'sb-top' },
+      el('h2', {}, `Partida #${m.match_id}`),
+      el('button', { type: 'button', class: 'danger small-btn', onclick: async () => { if (!confirm('¿Borrar la partida guardada?')) return; try { await api.post(`/api/matches/${m.match_id}/delete`); location.hash = '#partidas'; } catch (e) { toast(e.message, true); } } }, 'Borrar')),
+    el('div', { class: 'sb-main' }, side(0),
+      el('div', { class: 'sb-mid' }, el('div', { class: 'sb-vs' }, 'KILLS · DURACIÓN'), el('div', { class: 'sb-dur' }, fmt.mmss(m.duration_s)), el('div', { class: 'muted small' }, fmt.datetime(m.start_time))),
+      side(1)),
+    verified ? el('div', { class: 'muted small' }, verified.replace(/^ · /, '')) : null);
+}
+
+/** Diferencia de oro (equipo 0 − equipo 1) con los momentos clave (objetivos y Midboss). */
+function goldPanel(m, tname) {
+  const box = el('section', { class: 'panel gold' }, el('div', { class: 'section-head' }, el('h3', {}, 'Diferencia de oro'),
+    el('div', { class: 'legend' }, el('span', {}, el('i', { style: { background: 'var(--t0)' } }), `ventaja ${tname(0)}`), el('span', {}, el('i', { style: { background: 'var(--t1)' } }), `ventaja ${tname(1)}`))));
+  const times = [...new Set(m.players.flatMap(p => (p.nw_timeline || []).map(x => x[0])))].sort((a, b) => a - b);
+  if (times.length < 2) { box.append(el('p', { class: 'muted small' }, 'La partida no trae la evolución del net worth.')); return box; }
+  const at = (p, t) => { const tl = p.nw_timeline || []; let v = 0; for (const [s, nw] of tl) { if (s <= t) v = nw; else break; } return v; };
+  const pts = [[0, 0], ...times.map(t => [t, m.players.reduce((a, p) => a + (p.team === 0 ? 1 : -1) * at(p, t), 0)])];
+  const W = 900, H = 200, pad = { l: 46, r: 10, t: 12, b: 34 };
+  const T = Math.max(m.duration_s || 0, times[times.length - 1]);
+  const maxAbs = Math.max(1000, ...pts.map(p => Math.abs(p[1])));
+  const x = t => pad.l + (W - pad.l - pad.r) * t / T, y = v => pad.t + (H - pad.t - pad.b) * (1 - (v + maxAbs) / (2 * maxAbs));
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'goldchart'); svg.setAttribute('role', 'img');
+  const final = pts[pts.length - 1][1];
+  svg.setAttribute('aria-label', `Diferencia de oro a lo largo de la partida; al final ${fmt.signed0(final)} para ${final >= 0 ? tname(0) : tname(1)}`);
+  const mk = (tag, attrs, text) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; svg.append(e); return e; };
+  const line = pts.map(([t, v], i) => `${i ? 'L' : 'M'}${x(t).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  const area = `${line}L${x(pts[pts.length - 1][0])},${y(0)}L${x(0)},${y(0)}Z`;
+  const clip = (id, y0, h) => { const d = mk('clipPath', { id }); const r = document.createElementNS(ns, 'rect'); r.setAttribute('x', 0); r.setAttribute('y', y0); r.setAttribute('width', W); r.setAttribute('height', h); d.append(r); };
+  const uid = 'g' + m.match_id;
+  clip(uid + 'a', 0, y(0)); clip(uid + 'b', y(0), H);
+  for (const v of [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs]) {
+    mk('line', { x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v), class: v === 0 ? 'zero' : 'gridl' });
+    mk('text', { x: pad.l - 6, y: y(v) + 4, 'text-anchor': 'end' }, v === 0 ? '0' : (v > 0 ? '+' : '−') + Math.round(Math.abs(v) / 1000) + 'k');
+  }
+  for (let mn = 0; mn * 60 <= T; mn += 5) mk('text', { x: x(mn * 60), y: H - 18, 'text-anchor': 'middle' }, mn + "'");
+  mk('path', { d: area, class: 'area t0', 'clip-path': `url(#${uid}a)` });
+  mk('path', { d: area, class: 'area t1', 'clip-path': `url(#${uid}b)` });
+  mk('path', { d: line, class: 'gline' });
+  // momentos clave en el eje inferior
+  const ev = [
+    ...m.objectives.filter(o => o.destroyed_s).map(o => ({ t: o.destroyed_s, team: o.destroyed_by, label: `${fmt.mmss(o.destroyed_s)} · ${tname(o.destroyed_by ?? (1 - o.owner_team))} destruye ${o.label}`, kind: o.type })),
+    ...m.midboss.map(b => ({ t: b.t, team: b.team_claimed, label: `${fmt.mmss(b.t)} · Midboss: lo reclama ${tname(b.team_claimed)}`, kind: 'Midboss' })),
+  ];
+  for (const e of ev) {
+    const g = mk('g', { class: `moment t${e.team}` + (e.kind === 'Midboss' ? ' boss' : '') });
+    const big = /Midboss|Patron|Core|Shrine|Titan/i.test(e.kind || '');
+    const c = document.createElementNS(ns, big ? 'rect' : 'circle');
+    if (big) { c.setAttribute('x', x(e.t) - 4.5); c.setAttribute('y', H - 9 - 4.5); c.setAttribute('width', 9); c.setAttribute('height', 9); c.setAttribute('transform', `rotate(45 ${x(e.t)} ${H - 9})`); }
+    else { c.setAttribute('cx', x(e.t)); c.setAttribute('cy', H - 9); c.setAttribute('r', 3.5); }
+    const tt = document.createElementNS(ns, 'title'); tt.textContent = e.label;
+    g.append(c, tt);
+    if (big) { const l = document.createElementNS(ns, 'line'); l.setAttribute('x1', x(e.t)); l.setAttribute('x2', x(e.t)); l.setAttribute('y1', pad.t); l.setAttribute('y2', H - pad.b); l.setAttribute('class', 'mline'); g.prepend(l); }
+  }
+  const peak0 = pts.reduce((a, p) => p[1] > a[1] ? p : a), peak1 = pts.reduce((a, p) => p[1] < a[1] ? p : a);
+  box.append(el('div', { class: 'chart-scroll' }, svg),
+    el('div', { class: 'gold-facts' },
+      el('span', {}, 'Final: ', el('b', {}, fmt.signed0(final)), ` para ${final >= 0 ? tname(0) : tname(1)}`),
+      el('span', {}, `Máx. ${tname(0)}: `, el('b', {}, fmt.signed0(peak0[1])), ` (${fmt.mmss(peak0[0])})`),
+      el('span', {}, `Máx. ${tname(1)}: `, el('b', {}, fmt.signed0(-peak1[1])), ` (${fmt.mmss(peak1[0])})`),
+      el('span', { class: 'muted' }, '● objetivo · ◆ Midboss/estructura grande (pasa el ratón para ver detalle)')));
+  return box;
 }
 
 function resumen(root, m, tname, ctx) {
+  const mvp = mvpOf(m);
+  const maxNW = Math.max(...m.players.map(p => p.net_worth || 0), 1);
+  const maxKA = Math.max(...m.players.map(p => p.kills + p.deaths + p.assists), 1);
+  const maxDmg = Math.max(...m.players.map(p => p.player_damage || 0), 1);
+  const who = p => p.player_id ? el('button', { type: 'button', class: 'linkbtn', onclick: () => openProfile(p.player_id, ctx) }, pname(p)) : el('span', { class: 'muted' }, pname(p));
+  root.append(el('div', { class: 'mvp' }, el('span', { class: 'mvp-badge' }, icon('star'), 'MVP'),
+    el('div', {}, el('b', { class: 'mvp-hero' }, mvp.hero), ' · ', who(mvp), ' · ', el('span', { class: `tag t${mvp.team}` }, tname(mvp.team))),
+    el('div', { class: 'mvp-stats' }, `${mvp.kills}/${mvp.deaths}/${mvp.assists}`, el('span', { class: 'muted' }, ` · ${fmt.int(mvp.net_worth)} oro`),
+      el('span', { class: 'muted small' }, mvp.mvp_rank === 1 ? ' (según la partida)' : ' (estimado: KDA × oro)'))));
+  const grid = el('div', { class: 'grid2' });
   for (const t of [0, 1]) {
-    const ps = m.players.filter(p => p.team === t);
-    const k = ps.reduce((a, p) => a + p.kills, 0), nw = ps.reduce((a, p) => a + p.net_worth, 0);
-    root.append(el('h3', {}, el('span', { class: `tag t${t}` }, tname(t)), ` ${m.winning_team === t ? 'Victoria' : 'Derrota'} · ${k} kills · ${fmt.int(nw)} net worth`),
-      dataTable([
-        { key: 'hero', label: 'Héroe' },
-        { key: 'name', label: 'Jugador', render: p => p.player_id ? el('a', { href: '#', onclick: e => { e.preventDefault(); openProfile(p.player_id, ctx); } }, p.name || p.account_id) : String(p.account_id) },
-        { key: 'kills', label: 'K' }, { key: 'deaths', label: 'D' }, { key: 'assists', label: 'A' },
-        { key: 'net_worth', label: 'Net worth', fmt: 'int' }, { key: 'last_hits', label: 'Last hits' }, { key: 'denies', label: 'Denies' }, { key: 'level', label: 'Nivel' },
-        { key: 'comeback_gold_koth', label: 'Comeback Gold Koth', title: '> 0: ganó al menos un KOTH yendo por detrás (no es un recuento)' },
-      ], ps, { sortKey: 'net_worth' }), el('div', { style: { height: '12px' } }));
+    const ps = m.players.filter(p => p.team === t).sort((a, b) => b.net_worth - a.net_worth);
+    const k = teamSum(m, t, 'kills'), nw = teamSum(m, t, 'net_worth');
+    grid.append(el('div', { class: `team-card t${t}` },
+      el('h3', {}, el('span', { class: `tag t${t}` }, tname(t)), ` ${m.winning_team === t ? 'Victoria' : 'Derrota'}`, el('span', { class: 'muted small' }, ` · ${k} kills · ${fmt.int(nw)} oro`)),
+      el('ul', { class: 'plist' }, ps.map(p => el('li', { class: p === mvp ? 'is-mvp' : '' },
+        el('div', { class: 'pl-who' }, el('b', {}, p.hero), p === mvp ? el('span', { class: 'mvp-dot', title: 'MVP' }, icon('star')) : null, el('span', { class: 'small' }, who(p))),
+        el('div', { class: 'pl-kda', title: `${p.kills} kills · ${p.deaths} muertes · ${p.assists} asistencias` },
+          el('span', { class: 'kda-num' }, `${p.kills}/${p.deaths}/${p.assists}`),
+          el('span', { class: 'kda-bar', 'aria-hidden': 'true', style: { width: (100 * (p.kills + p.deaths + p.assists) / maxKA) + '%' } },
+            el('i', { class: 'k', style: { flex: p.kills } }), el('i', { class: 'd', style: { flex: p.deaths } }), el('i', { class: 'a', style: { flex: p.assists } }))),
+        el('div', { class: 'pl-nw' }, el('span', { class: 'lbl' }, 'Oro'), el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: { width: (100 * p.net_worth / maxNW) + '%' } })), el('span', { class: 'v' }, fmt.int(p.net_worth))),
+        p.player_damage != null ? el('div', { class: 'pl-nw dmg' }, el('span', { class: 'lbl' }, 'Daño'), el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: { width: (100 * p.player_damage / maxDmg) + '%' } })), el('span', { class: 'v' }, fmt.int(p.player_damage))) : null)))));
   }
+  root.append(el('div', { class: 'legend' }, el('span', {}, el('i', { style: { background: 'var(--ok)' } }), 'kills'), el('span', {}, el('i', { style: { background: 'var(--bad)' } }), 'muertes'), el('span', {}, el('i', { style: { background: 'var(--muted)' } }), 'asistencias')), grid);
+  const det = el('details', { class: 'block' }, el('summary', {}, 'Tabla completa'));
+  for (const t of [0, 1]) {
+    det.append(el('h4', {}, tname(t)), dataTable([
+      { key: 'hero', label: 'Héroe' },
+      { key: 'name', label: 'Jugador', render: p => who(p) },
+      { key: 'kills', label: 'K' }, { key: 'deaths', label: 'D' }, { key: 'assists', label: 'A' },
+      { key: 'net_worth', label: 'Net worth', fmt: 'int' }, { key: 'player_damage', label: 'Daño', fmt: 'int' }, { key: 'last_hits', label: 'Last hits' }, { key: 'denies', label: 'Denies' }, { key: 'level', label: 'Nivel' },
+      { key: 'comeback_gold_koth', label: 'Comeback Gold Koth', title: '> 0: ganó al menos un KOTH yendo por detrás (no es un recuento)' },
+    ], m.players.filter(p => p.team === t), { sortKey: 'net_worth' }));
+  }
+  root.append(det);
 }
 
 function objetivos(root, m, tname) {
@@ -116,7 +236,7 @@ function objetivos(root, m, tname) {
   const ev = side => m.objectives.filter(o => o.owner_team === side && o.destroyed_s).map(o => ({ t: o.destroyed_s, label: `${o.label} de ${tname(side)}`, side: side === 0 ? 't0' : 't1', kind: o.type }));
   const mb = m.midboss.map(x => ({ t: x.t, label: `Midboss: lo mata ${tname(x.team_killed)}, lo reclama ${tname(x.team_claimed)}`, side: x.team_killed === 0 ? 't0' : 't1', kind: 'Titan' }));
   root.append(el('h3', { style: { marginTop: '14px' } }, 'Línea de tiempo'),
-    el('p', { class: 'muted small' }, 'Color = equipo DUEÑO del objetivo que cae (ámbar = equipo 0, azul = equipo 1).'),
+    el('p', { class: 'muted small' }, 'Color = equipo DUEÑO del objetivo que cae (ámbar relleno = equipo 0, azul en contorno = equipo 1).'),
     timeline({ rows: [
       { label: `Pierde ${tname(0)}`, duration: m.duration_s, events: ev(0) },
       { label: `Pierde ${tname(1)}`, duration: m.duration_s, events: ev(1) },
@@ -138,22 +258,24 @@ function midboss(root, m, tname) {
 async function minimapa(root, m, tname) {
   const status = el('div', {}, spinner('Decodificando posiciones…'));
   root.append(status);
-  const [pos, info] = await Promise.all([api.get(`/api/matches/${m.match_id}/positions?step=2`), loadMapInfo()]);
+  let pos, info;
+  try { [pos, info] = await Promise.all([api.get(`/api/matches/${m.match_id}/positions?step=2`), loadMapInfo()]); }
+  catch (e) { status.replaceWith(errorBox(e.message, () => { root.innerHTML = ''; minimapa(root, m, tname); }, 'No se pudieron cargar las posiciones')); return; }
   status.remove();
   const dur = m.duration_s, step = pos.interval_s;
   const st = { team: 'all', slot: 'all', from: 0, to: Math.ceil(dur / 60), heat: true, deaths: true, objectives: false, rotate: false };
-  const teamSel = el('select', {}, [['all', 'Ambos equipos'], ['0', tname(0)], ['1', tname(1)]].map(([v, l]) => el('option', { value: v }, l)));
-  const slotSel = el('select', {}, el('option', { value: 'all' }, 'Todos los jugadores'),
-    m.players.map(p => el('option', { value: p.slot }, `${p.hero} · ${p.name || p.account_id} (${p.team})`)));
-  const from = el('input', { type: 'number', min: 0, max: st.to, value: 0, style: { width: '64px' } });
-  const to = el('input', { type: 'number', min: 0, max: st.to, value: st.to, style: { width: '64px' } });
+  const teamSel = el('select', { 'aria-label': 'Equipo' }, [['all', 'Ambos equipos'], ['0', tname(0)], ['1', tname(1)]].map(([v, l]) => el('option', { value: v }, l)));
+  const slotSel = el('select', { 'aria-label': 'Jugador' }, el('option', { value: 'all' }, 'Todos los jugadores'),
+    m.players.map(p => el('option', { value: p.slot }, `${p.hero} · ${pname(p)} (${tname(p.team)})`)));
+  const from = el('input', { 'aria-label': 'Desde el minuto', type: 'number', min: 0, max: st.to, value: 0, style: { width: '64px' } });
+  const to = el('input', { 'aria-label': 'Hasta el minuto', type: 'number', min: 0, max: st.to, value: st.to, style: { width: '64px' } });
   const chk = (key, label) => { const c = el('input', { type: 'checkbox', checked: st[key] }); c.addEventListener('change', () => { st[key] = c.checked; draw(); }); return el('label', {}, c, label); };
   const box = el('div');
-  const map = new MapView(box, { size: 820 });
+  const map = new MapView(box, { size: 820, label: `Minimapa de la partida ${m.match_id}` });
   const counts = el('div', { class: 'muted small' });
   root.append(el('div', { class: 'row' }, teamSel, slotSel, el('label', {}, 'minuto', from, '–', to), chk('heat', 'calor de posiciones'), chk('deaths', 'muertes ✕'),
     chk('objectives', 'objetivos'), chk('rotate', 'girar 180°'), el('button', { onclick: () => map.exportPNG(`minimapa_${m.match_id}.png`) }, 'Exportar PNG')),
-    legend([[COLORS.t0, tname(0)], [COLORS.t1, tname(1)], ['#333', 'muerte (color = equipo de la víctima)', 'x']]), counts, box,
+    legend([[COLORS.t0, tname(0)], [COLORS.t1, tname(1)], [COLORS.neutral, 'muerte (color = equipo de la víctima)', 'x']]), counts, box,
     el('p', { class: 'muted small' }, `Calibración: ${info.calibration?.source || '—'}. Las posiciones con vida 0 (muerto) se descartan.`));
   for (const [i, k] of [[teamSel, 'team'], [slotSel, 'slot']]) i.addEventListener('change', () => { st[k] = i.value; draw(); });
   for (const [i, k] of [[from, 'from'], [to, 'to']]) i.addEventListener('input', () => { st[k] = +i.value; draw(); });
