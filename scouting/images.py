@@ -26,6 +26,7 @@ _EXT = re.compile(r"\.(png|jpe?g|webp)\Z", re.I)
 _FAILED = {}
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
+_FAILED_GUARD = threading.Lock()
 
 
 def safe_name(origin, name):
@@ -93,6 +94,16 @@ def _read_cached(fp):
         return None
 
 
+def _remember_failure(key):
+    """Recuerda un fallo y poda los caducados. Bajo _FAILED_GUARD: varios hilos con claves
+    distintas pueden llegar aquí a la vez, y recorrer el dict mientras otro inserta revienta."""
+    now = time.time()
+    with _FAILED_GUARD:
+        for k in [k for k, t in _FAILED.items() if now - t >= FAIL_TTL]:
+            del _FAILED[k]
+        _FAILED[key] = now
+
+
 def get(origin, name, opener=None):
     """(bytes, content-type) de la imagen, descargándola si hace falta; None si no está disponible."""
     name = safe_name(origin, name)
@@ -122,10 +133,7 @@ def get(origin, name, opener=None):
                     ctype = str(v).split(";")[0].strip().lower()
             if (status != 200 or not ctype.startswith("image/") or ctype == "image/svg+xml"
                     or not body or len(body) > MAX_BYTES):
-                now = time.time()
-                for k in [k for k, t in _FAILED.items() if now - t >= FAIL_TTL]:
-                    _FAILED.pop(k, None)
-                _FAILED[key] = now
+                _remember_failure(key)
                 return None
             try:
                 _write(fp, body)

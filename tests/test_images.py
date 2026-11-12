@@ -266,5 +266,39 @@ class MapInfo(unittest.TestCase):
         self.assertIsNone(info["objective_positions"])
 
 
+class FailureMemoryConcurrency(_CacheCase):
+    def test_concurrent_failures_never_raise(self):
+        """Varios hilos con descargas fallidas de imágenes distintas a la vez: ninguno debe lanzar
+        (antes, la poda recorría _FAILED sin bloqueo y otro hilo podía insertar a mitad:
+        'dictionary changed size during iteration')."""
+        now = __import__("time").time()
+        # muchos fallos recientes (no caducados) para que la poda recorra un diccionario grande
+        for i in range(100_000):
+            images._FAILED[("wiki", f"pre{i}.png")] = now
+
+        def opener(url):
+            return 404, {}, b""
+
+        errors = []
+        start = threading.Barrier(8)
+
+        def worker(t):
+            start.wait()
+            for i in range(40):
+                try:
+                    images.get("wiki", f"t{t}_{i}.png", opener)
+                except Exception as e:  # cualquier excepción es el fallo que buscamos
+                    errors.append(repr(e))
+
+        threads = [threading.Thread(target=worker, args=(t,)) for t in range(8)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+        self.assertEqual(errors, [])
+        # y todos los fallos quedaron recordados
+        self.assertTrue(all(("wiki", f"t{t}_{i}.png") in images._FAILED for t in range(8) for i in range(40)))
+
+
 if __name__ == "__main__":
     unittest.main()
