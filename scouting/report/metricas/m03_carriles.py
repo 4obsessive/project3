@@ -55,7 +55,7 @@ def carriles(ctx):
     ln = lambda l: lane_names.get(l, f"Carril {l}")
     n = ctx.n
     blocks = [ctx.sample_warning(),
-              {"type": "text", "tone": "info", "text": "Los carriles son absolutos del mapa (1 = izquierda, 3 = centro, 4 = derecha vistos con el equipo 0 abajo). "
+              {"type": "text", "tone": "info", "text": "Carriles por color: York (amarillo), Broadway (azul) y Greenwich (verde); son los mismos para ambos equipos. "
                                                          "El mapeo de team_objective_id es inferido y se puede corregir en Partidas › Mapeo de objetivos."}]
     blocks.append({"type": "bars", "title": "Primer Guardian: carril", "unit": "%", "n": n,
                    "labels": [ln(l) for l in lanes],

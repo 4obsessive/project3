@@ -132,10 +132,50 @@ def load_objective_map(path=None):
     return objs, lanes
 
 
-def save_objective_map(objs, lanes, path=None):
+LANE_DEFAULTS = {
+    1: {"nombre": "York", "color": "#F1CC30", "alias": "amarillo"},
+    3: {"nombre": "Broadway", "color": "#29b1cc", "alias": "azul"},
+    4: {"nombre": "Greenwich", "color": "#59b247", "alias": "verde"},
+}
+
+
+def load_lane_styles(path=None):
+    """Carril -> {nombre, color, alias}. Siempre incluye 1, 3 y 4; el archivo sobrescribe los defaults."""
     path = path or config.OBJECTIVES_PATH
     with open(path, encoding="utf-8") as f:
         d = json.load(f)
+    names = {int(k): v for k, v in d.get("carriles", {}).items()}
+    colores = {int(k): v for k, v in (d.get("colores") or {}).items()}
+    out = {k: dict(v) for k, v in LANE_DEFAULTS.items()}
+    for k in set(names) | set(colores):
+        st = out.setdefault(k, {"nombre": f"Carril {k}", "color": "#888888", "alias": ""})
+        if k in names:
+            st["nombre"] = names[k]
+        c = colores.get(k) or {}
+        if c.get("color"):
+            st["color"] = c["color"]
+        if "alias" in c:
+            st["alias"] = c["alias"]
+    return out
+
+
+def lanes_payload(path=None):
+    return {str(k): v for k, v in sorted(load_lane_styles(path).items())}
+
+
+def load_lane_colors(path=None):
+    """Bloque `colores` tal cual está en el archivo (clave str)."""
+    path = path or config.OBJECTIVES_PATH
+    with open(path, encoding="utf-8") as f:
+        return json.load(f).get("colores") or {}
+
+
+def save_objective_map(objs, lanes, path=None, colores=None):
+    path = path or config.OBJECTIVES_PATH
+    with open(path, encoding="utf-8") as f:
+        d = json.load(f)
+    if colores is not None:
+        d["colores"] = {str(k): v for k, v in sorted(colores.items())}
     d["objetivos"] = {str(k): v for k, v in sorted(objs.items())}
     d["carriles"] = {str(k): v for k, v in sorted(lanes.items())}
     with open(path, "w", encoding="utf-8") as f:
@@ -306,4 +346,5 @@ def overview(mi, hero_names=None):
         "midboss": midboss(mi),
         "deaths": deaths(mi),
         "objective_map": {"objetivos": {str(k): v for k, v in objs.items()}, "carriles": {str(k): v for k, v in lanes.items()}},
+        "lanes": lanes_payload(),
     }

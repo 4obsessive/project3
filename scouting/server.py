@@ -331,7 +331,8 @@ class App:
 
     def objmap_get(self, req):
         objs, lanes = matches.load_objective_map()
-        return {"objetivos": {str(k): v for k, v in objs.items()}, "carriles": {str(k): v for k, v in lanes.items()}}
+        return {"objetivos": {str(k): v for k, v in objs.items()}, "carriles": {str(k): v for k, v in lanes.items()},
+                "colores": matches.load_lane_colors()}
 
     def objmap_set(self, req):
         body = req.json()
@@ -339,9 +340,17 @@ class App:
             objs = {int(k): {"tipo": str(v["tipo"]), "carril": (int(v["carril"]) if v.get("carril") not in (None, "") else None),
                              **({"n": int(v["n"])} if v.get("n") else {})} for k, v in body["objetivos"].items()}
             lanes = {int(k): str(v) for k, v in body.get("carriles", {}).items()}
+            colores = None
+            if body.get("colores") is not None:
+                colores = {}
+                for k, v in body["colores"].items():
+                    color = str(v["color"])
+                    if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                        raise ValueError(f"color no válido: {color}")
+                    colores[int(k)] = {"color": color, "alias": str(v.get("alias", ""))}
         except (KeyError, ValueError, TypeError) as e:
             raise HttpError(400, f"Mapeo no válido: {e}")
-        matches.save_objective_map(objs, lanes)
+        matches.save_objective_map(objs, lanes, colores=colores)
         return self.objmap_get(req)
 
     # -------------------------------------------------------------------- mapa

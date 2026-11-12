@@ -162,7 +162,7 @@ def run(team, match_datas, roster, side_overrides=None, params=None):
     if conclusions:
         sections.append(_run_one(conclusions, ctx))
     return {"team": team, "n": ctx.n, "params": params, "sides": sides, "skipped": skipped,
-            "team_names": M.TEAM_NAMES, "team_names_verified": M.TEAM_NAMES_VERIFIED, "sections": sections}
+            "lanes": M.lanes_payload(), "team_names": M.TEAM_NAMES, "team_names_verified": M.TEAM_NAMES_VERIFIED, "sections": sections}
 
 
 def _run_one(m, ctx):
