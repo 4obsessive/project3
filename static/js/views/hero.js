@@ -2,6 +2,7 @@
 // con el héroe y se baja el mínimo solo si hace falta, avisando.
 import { getPlayers, getHeroes } from '../api.js';
 import { el, fmt, dataTable, store, spinner } from '../util.js';
+import { heroPortrait } from '../art.js';
 import { openProfile } from './profile.js';
 
 const TARGET = 30, START_MIN = 15;
@@ -12,12 +13,32 @@ export async function render(root, ctx) {
   root.innerHTML = '';
   let heroId = store.get('hero', heroes[0]?.id);
   let freeOnly = store.get('heroFreeOnly', false);
-  const sel = el('select', {}, heroes.map(h => el('option', { value: h.id, selected: h.id === heroId }, h.name)));
   const free = el('input', { type: 'checkbox', checked: freeOnly });
   const info = el('div', { class: 'note info' });
   const tableBox = el('div');
-  root.append(el('div', { class: 'panel row' }, el('label', {}, 'Héroe', sel), el('label', {}, free, 'solo libres')), el('div', { class: 'panel' }, info, tableBox));
-  sel.addEventListener('change', () => { heroId = +sel.value; store.set('hero', heroId); update(); });
+  const q = el('input', { type: 'search', class: 'search', 'aria-label': 'Buscar héroe', placeholder: 'Buscar héroe…' });
+  const grid = el('div', { class: 'hp-grid', role: 'group', 'aria-label': 'Héroes' });
+  const noMatch = el('p', { class: 'muted small', hidden: true }, 'Ningún héroe coincide con la búsqueda.');
+  const btns = new Map();
+  for (const h of heroes) {
+    const b = el('button', { type: 'button', class: 'hp-card' + (h.id === heroId ? ' active' : ''), 'aria-pressed': String(h.id === heroId), title: h.name,
+      onclick: () => choose(h.id) }, heroPortrait(h, { size: 'md', shape: 'card' }), el('span', { class: 'hp-name' }, h.name));
+    btns.set(h.id, b);
+    grid.append(b);
+  }
+  function choose(id) {
+    heroId = id; store.set('hero', id);
+    for (const [hid, b] of btns) { const on = hid === id; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
+    update();
+  }
+  q.addEventListener('input', () => {
+    const t = q.value.trim().toLowerCase();
+    let n = 0;
+    for (const h of heroes) { const show = !t || h.name.toLowerCase().includes(t); btns.get(h.id).hidden = !show; if (show) n++; }
+    noMatch.hidden = n > 0;
+  });
+  root.append(el('div', { class: 'panel' }, el('div', { class: 'row' }, q, el('label', {}, free, 'solo libres')), grid, noMatch),
+    el('div', { class: 'panel' }, info, tableBox));
   free.addEventListener('change', () => { freeOnly = free.checked; store.set('heroFreeOnly', freeOnly); update(); });
 
   function update() {

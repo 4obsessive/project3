@@ -1,5 +1,6 @@
 // Panel lateral de perfil: stats, top héroes, cuentas, tendencias, dúos y campos manuales.
-import { api, invalidatePlayers } from '../api.js';
+import { api, invalidatePlayers, getHeroes } from '../api.js';
+import { heroPortrait } from '../art.js';
 import { el, fmt, dataTable, toast, spinner, errorBox, cssVar } from '../util.js';
 import { lines } from '../charts.js';
 
@@ -28,10 +29,14 @@ export async function openProfile(pid, ctx) {
   );
 
   // top 5 héroes
-  d.append(el('h3', {}, 'Top 5 héroes del mes'), dataTable([
-    { key: 'name', label: 'Héroe' }, { key: 'matches', label: 'Partidas' }, { key: 'winrate', label: 'WR', fmt: 'pct' },
-    { key: 'kd', label: 'KD', fmt: '2' }, { key: 'kda', label: 'KDA', fmt: '2' }, { key: 'damage_per_match', label: 'Daño/partida', fmt: 'int' },
-  ], p.top_heroes, { sortKey: 'matches' }));
+  const heroById = new Map((await getHeroes().catch(() => [])).map(h => [h.id, h]));
+  d.append(el('h3', {}, 'Top 5 héroes del mes'),
+    p.top_heroes.length
+      ? el('div', { class: 'top-heroes' }, p.top_heroes.map(h => el('div', { class: 'th-card' },
+          heroPortrait(heroById.get(h.hero_id) || { id: h.hero_id, name: h.name }, { size: 'lg', shape: 'card' }),
+          el('div', { class: 'th-body' }, el('b', {}, h.name),
+            el('span', { class: 'th-stats' }, `${fmt.int(h.matches)} partidas · WR ${fmt.pct(h.winrate)} · KDA ${fmt.dec(h.kda)}`)))))
+      : el('p', { class: 'muted' }, 'Sin héroes registrados.'));
   if (p.heroes.length > 5) {
     const all = el('details', {}, el('summary', { class: 'muted small' }, `Todos los héroes (${p.heroes.length})`),
       dataTable([{ key: 'name', label: 'Héroe' }, { key: 'matches', label: 'Partidas' }, { key: 'winrate', label: 'WR', fmt: 'pct' }, { key: 'kda', label: 'KDA', fmt: '2' }], p.heroes, { sortKey: 'matches' }));

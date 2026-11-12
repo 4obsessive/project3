@@ -1,6 +1,7 @@
-import { api, getPlayers } from '../api.js';
+import { api, getPlayers, getHeroes } from '../api.js';
 import { el, fmt, dataTable, store, csvDownload, spinner, scaler, meter } from '../util.js';
 import { icon } from '../icons.js';
+import { heroPortrait } from '../art.js';
 import { computeScores, DEFAULT_WEIGHTS } from '../score.js';
 import { openProfile } from './profile.js';
 
@@ -8,7 +9,8 @@ export const STATUSES = ['pendiente', 'en seguimiento', 'contactado', 'en prueba
 
 export async function render(root, ctx) {
   root.append(spinner());
-  const [players, climb] = await Promise.all([getPlayers(true), api.get('/api/climbers?days=7').catch(() => null)]);
+  const [players, climb, heroList] = await Promise.all([getPlayers(true), api.get('/api/climbers?days=7').catch(() => null), getHeroes().catch(() => [])]);
+  const heroById = new Map(heroList.map(h => [h.id, h]));
   root.innerHTML = '';
   let mode = store.get('playersMode', 'table');
   const f = store.get('playerFilters', { q: '', team: 'all', role: '', minMatches: 0, newDays: 0, status: '', source: 'all' });
@@ -71,7 +73,7 @@ export async function render(root, ctx) {
     { key: 'rank', label: 'Rank', num: true, keep: true, render: p => p.rank == null ? '–' : el('span', { class: 'rank-badge' + (p.rank <= 3 ? ' top' : '') }, '#' + p.rank), title: 'Posición en la leaderboard de la temporada actual' },
     { key: 'prev', label: 'Rank ant.', num: true, title: 'Mejor posición en las leaderboards extra (temporadas anteriores)',
       sort: p => prevRank(p), render: p => { const r = prevRank(p); return r == null ? '–' : el('span', { class: 'muted' }, '#' + r); } },
-    { key: 'name', label: 'Jugador', keep: true, render: p => el('span', {}, p.name, ' ', p.accounts.length > 1 ? el('span', { class: 'tag', title: 'cuentas enlazadas' }, `${p.accounts.length} cuentas`) : null) },
+    { key: 'name', label: 'Jugador', keep: true, render: p => el('span', { class: 'hero-cell' }, mainHeroAvatar(p, heroById), el('span', {}, p.name), p.accounts.length > 1 ? el('span', { class: 'tag', title: 'cuentas enlazadas' }, `${p.accounts.length} cuentas`) : null) },
     { key: 'team', label: 'Equipo', render: p => p.team ? el('span', { title: p.team_source }, p.team) : el('span', { class: 'tag free' }, 'libre') },
     { key: 'role_text', label: 'Roles', wrap: true, render: p => el('span', { class: 'small' }, p.role_text || '–') },
     { key: 'matches', label: 'Partidas', num: true, sort: p => p.stats.matches, render: p => fmt.int(p.stats.matches) },
@@ -140,6 +142,13 @@ export async function render(root, ctx) {
   more.querySelector('.row').after(scorePanel);
   root.append(highlights, filters, el('div', { class: 'panel' }, el('div', { class: 'row table-head' }, count, hiddenNote, el('span', { class: 'spacer' }), exportBtn), table, cards));
   update();
+}
+
+function mainHeroAvatar(p, heroById) {
+  const top = p.heroes && p.heroes[0];
+  if (!top) return null;
+  const h = heroById.get(top.hero_id) || { id: top.hero_id, name: top.name };
+  return heroPortrait(h, { size: 'sm', shape: 'round' });
 }
 
 function scoreBar(p) {

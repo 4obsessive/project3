@@ -1,7 +1,8 @@
 // Inicio: qué es la herramienta, KPIs, climbers de la semana, últimas partidas y accesos rápidos.
-import { api, getPlayers } from '../api.js';
+import { api, getPlayers, getHeroes } from '../api.js';
 import { el, fmt } from '../util.js';
 import { icon } from '../icons.js';
+import { heroPortrait } from '../art.js';
 import { openProfile } from './profile.js';
 
 const LINKS = [
@@ -14,16 +15,17 @@ const LINKS = [
 ];
 
 export async function render(root, ctx) {
-  const [status, players, matches, climb] = await Promise.all([
+  const [status, players, matches, climb, heroList] = await Promise.all([
     api.get('/api/status').catch(() => ctx.status),
     getPlayers().catch(() => []),
     api.get('/api/matches').catch(() => []),
     api.get('/api/climbers?days=7').catch(() => null),
+    getHeroes().catch(() => []),
   ]);
   const counts = status?.counts || {};
   const empty = !counts.players;
 
-  root.append(el('section', { class: 'hero' },
+  root.append(el('section', { class: 'hero' }, heroMosaic(players, heroList),
     el('div', { class: 'hero-text' },
       el('span', { class: 'eyebrow' }, `Scouting · ${status?.region || 'región'} · ${(status?.season_names || {})[status?.current_leaderboard_id] || 'temporada actual'}`),
       el('h1', {}, 'Encuentra, compara y analiza ', el('span', { class: 'accent' }, 'jugadores de Deadlock')),
@@ -72,6 +74,19 @@ export async function render(root, ctx) {
   root.append(el('h2', { class: 'section-title' }, 'Accesos rápidos'),
     el('div', { class: 'quick', role: 'navigation', 'aria-label': 'Accesos rápidos' }, LINKS.map(([v, t, d]) => el('a', { href: '#' + v, class: 'quick-card' },
       el('span', { class: 'quick-ico' }, icon(v)), el('span', { class: 'quick-t' }, t), el('span', { class: 'quick-d' }, d)))));
+}
+
+// Los 12 héroes con más partidas sumadas entre todos los jugadores; decorativo.
+function heroMosaic(players, heroList) {
+  const total = new Map();
+  for (const p of players) for (const h of p.heroes || []) total.set(h.hero_id, (total.get(h.hero_id) || 0) + (h.matches || 0));
+  const byId = new Map(heroList.map(h => [h.id, h]));
+  const top = [...total.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
+    .map(([id]) => byId.get(id)).filter(Boolean);
+  if (!top.length) return null;
+  const box = el('div', { class: 'hero-mosaic', 'aria-hidden': 'true' });
+  for (const h of top) { const img = heroPortrait(h, { size: 'lg', shape: 'card' }); img.alt = ''; box.append(img); }
+  return box;
 }
 
 function step(n, title, text) {
