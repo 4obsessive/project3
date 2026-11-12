@@ -160,5 +160,25 @@ class HeroesPayload(unittest.TestCase):
         self.assertEqual(hs[2]["wiki_image"], "/img/wiki/The_Doorman_vertical.png")
 
 
+class MapInfo(unittest.TestCase):
+    def test_lane_paths_and_koth(self):
+        app = App(None, _Upd(), 0)
+
+        class C:
+            def map_asset(self):
+                return {"objective_positions": {}, "radius": 1,
+                        "zipline_paths": [
+                            {"origin": [-1280, -10774, 0], "color": "#29b1cc",
+                             "P0_points": [[0, 0, 0], [0, 1000, 5]]},
+                            {"origin": [10, 20, 0], "color": "#F1CC30", "P0_points": [[1, 2, 3]]}],
+                        "entities": {"unstable_rifts": [{"position": [5, 6, 7]}, {"position": [8, 9, 1]}]}}
+        app.client = C()
+        info = app.map_info(None)
+        self.assertEqual(info["lane_paths"][0], {"lane": 3, "color": "#29b1cc",
+                                                 "points": [[-1280, -10774], [-1280, -9774]]})
+        self.assertEqual(info["lane_paths"][1]["lane"], 1)
+        self.assertEqual(info["koth"], [[5, 6], [8, 9]])
+
+
 if __name__ == "__main__":
     unittest.main()

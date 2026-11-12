@@ -1,5 +1,5 @@
 // Módulo ÚNICO de mapa: minimapa, partidas e informe usan este mismo render.
-// Capas: heat (calor), points (●), crosses (✕), cells (cuadrícula con valor), paths (recorridos).
+// Capas: heat (calor), points (●), crosses (✕), cells (cuadrícula con valor), paths (recorridos), markers, images.
 import { api } from './api.js';
 import { el, downloadBlob, cssVar } from './util.js';
 import { SIDE_COLORS } from './charts.js';
@@ -88,7 +88,7 @@ export class MapView {
     if (this.grid) this.drawGrid(ctx);
     for (const L of this.layers) {
       if (L.hidden) continue;
-      const fn = { heat: this.drawHeat, points: this.drawPoints, crosses: this.drawCrosses, cells: this.drawCells, paths: this.drawPaths, markers: this.drawMarkers }[L.kind];
+      const fn = { heat: this.drawHeat, points: this.drawPoints, crosses: this.drawCrosses, cells: this.drawCells, paths: this.drawPaths, markers: this.drawMarkers, images: this.drawImages }[L.kind];
       if (fn) fn.call(this, ctx, L);
     }
   }
@@ -183,9 +183,42 @@ export class MapView {
     ctx.restore();
   }
 
+  /** Imágenes cargadas desde /img/... centradas en su posición; si no cargan, un círculo de color `label`. */
+  drawImages(ctx, L) {
+    this.imgCache = this.imgCache || new Map();
+    ctx.save();
+    for (const it of L.items) {
+      const [x, y] = this.toPx(it.x, it.y);
+      const s = it.size || 24;
+      let img = null;
+      if (it.src) {
+        if (!this.imgCache.has(it.src)) {
+          const im = new Image();
+          const rec = { im, ok: false };
+          im.onload = () => { rec.ok = true; this.draw(); };
+          im.src = it.src;
+          this.imgCache.set(it.src, rec);
+        }
+        const rec = this.imgCache.get(it.src);
+        if (rec.ok) img = rec.im;
+      }
+      if (img) {
+        const k = Math.min(s / img.naturalWidth, s / img.naturalHeight);
+        const w = img.naturalWidth * k, h = img.naturalHeight * k;
+        ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
+      } else {
+        ctx.fillStyle = it.color || it.label || COLORS.neutral;
+        ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, s / 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   drawPaths(ctx, L) {
     ctx.save();
-    ctx.strokeStyle = L.color || COLORS.us; ctx.globalAlpha = L.alpha || 0.6; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = L.color || COLORS.us; ctx.globalAlpha = L.alpha || 0.6; ctx.lineWidth = L.width || 1.5;
+    ctx.lineJoin = 'round';
     for (const path of L.paths) {
       ctx.beginPath(); let pen = false;
       for (const p of path) {

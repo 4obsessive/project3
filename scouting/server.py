@@ -376,8 +376,22 @@ class App:
             a = self.client.map_asset()
             info["objective_positions"] = a.get("objective_positions")
             info["radius"] = a.get("radius")
+            by_color = {v["color"].lower(): k for k, v in matches.load_lane_styles().items()}
+            lane_paths = []
+            for z in a.get("zipline_paths") or []:
+                ox, oy = (z.get("origin") or [0, 0])[:2]
+                pts = [[ox + p[0], oy + p[1]] for p in z.get("P0_points") or []]
+                lane = by_color.get(str(z.get("color", "")).lower())
+                if lane is not None and pts:
+                    lane_paths.append({"lane": lane, "color": z["color"], "points": pts})
+            info["lane_paths"] = lane_paths
+            info["koth"] = [[r["position"][0], r["position"][1]]
+                            for r in (a.get("entities") or {}).get("unstable_rifts") or []
+                            if r.get("position")]
         except ApiError:
             info["objective_positions"] = None
+            info["lane_paths"] = []
+            info["koth"] = []
         return info
 
     def map_calibrate(self, req):
