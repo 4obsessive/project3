@@ -143,9 +143,21 @@ class Client:
     def map_asset(self):
         return self.cached_json("map", "/v1/assets/map")
 
-    def hero_stats(self, account_ids, min_unix_timestamp=None):
+    def hero_stats(self, account_ids, min_unix_timestamp=None, match_mode=None):
+        """match_mode: "ranked", "unranked" o "ranked,unranked" (None = lo que devuelva la API por defecto)."""
         ids = ",".join(str(int(a)) for a in account_ids)
-        return self.get_json("/v1/players/hero-stats", {"account_ids": ids, "min_unix_timestamp": min_unix_timestamp})
+        params = {"account_ids": ids, "min_unix_timestamp": min_unix_timestamp}
+        if match_mode:
+            params["match_mode"] = match_mode
+        return self.get_json("/v1/players/hero-stats", params)
+
+    def population_hero_stats(self, min_unix_timestamp, min_average_badge=91):
+        """Totales por héroe de toda la población (base de comparación si faltan datos propios)."""
+        return self.cached_json(f"hero_analytics_{min_average_badge}", "/v1/analytics/hero-stats",
+                                {"min_unix_timestamp": min_unix_timestamp, "min_average_badge": min_average_badge}, ttl_s=86400)
+
+    def rank_assets(self):
+        return self.cached_json("ranks", "/v1/assets/ranks")
 
     def ranks(self, account_ids):
         """Límite documentado: 10 000 cuentas/min y 100 000/h por IP (cada cuenta del lote cuenta).
