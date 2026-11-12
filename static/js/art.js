@@ -59,16 +59,23 @@ function guardianSvg(size) {
     html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12z" fill="currentColor" fill-opacity=".25" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>' });
 }
 
+/** Ruta /img/wiki/... de la imagen de un objetivo; null si no tiene (Guardian = rombo SVG). */
+export function objectiveSrc(type, ownerTeam = null) {
+  const k = objKey(type);
+  let file = WIKI_OBJ[k];
+  if (k === 'baseguardian') file = ownerTeam === 1 ? 'Archmother_base_guardians.png' : 'Hidden_King_base_guardians.png';
+  return file ? '/img/wiki/' + file : null;
+}
+
 /** Imagen de un objetivo según su tipo (y equipo dueño para las bases). */
 export function objectiveImg(type, ownerTeam = null, { size = 'md' } = {}) {
   const k = objKey(type);
   if (k === 'guardian') return guardianSvg(size);
-  let file = WIKI_OBJ[k];
-  if (k === 'baseguardian') file = ownerTeam === 1 ? 'Archmother_base_guardians.png' : 'Hidden_King_base_guardians.png';
+  const src = objectiveSrc(type, ownerTeam);
   const fallback = () => el('span', { class: `obj-img ${size} obj-fallback`, role: 'img', 'aria-label': String(type) },
     icon(OBJ_ICON[k] || 'grid'));
-  if (!file) return fallback();
-  const img = el('img', { class: `obj-img ${size}`, loading: 'lazy', alt: String(type), src: '/img/wiki/' + file });
+  if (!src) return fallback();
+  const img = el('img', { class: `obj-img ${size}`, loading: 'lazy', alt: String(type), src });
   img.addEventListener('error', () => img.replaceWith(fallback()));
   return img;
 }

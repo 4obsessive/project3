@@ -5,7 +5,7 @@ import { timeline } from '../charts.js';
 import { renderExplorer } from './explorer.js';
 import { openProfile } from './profile.js';
 import { icon } from '../icons.js';
-import { heroPortrait, objectiveImg, laneStyle } from '../art.js';
+import { heroPortrait, objectiveImg, objectiveSrc, laneStyle } from '../art.js';
 import { matchRow } from './home.js';
 
 export async function render(root, ctx) {
@@ -260,11 +260,23 @@ function laneTracks(m, tname) {
   const fallen = m.objectives.filter(o => o.destroyed_s);
   const dur = Math.max(m.duration_s || 0, ...fallen.map(o => o.destroyed_s), 1);
   const laneIds = [...new Set([1, 3, 4, ...fallen.map(o => o.lane).filter(l => l != null)])];
-  const row = (name, alias, color, list) => el('div', { class: 'lane-row', style: { '--lane': color } },
-    el('div', { class: 'ln' }, name, alias ? el('small', {}, alias) : null),
-    el('div', { class: 'lane-track', role: 'list', 'aria-label': `Objetivos destruidos en ${name}` },
-      list.map(o => el('span', { class: `ev t${o.owner_team}`, role: 'listitem', style: { left: (100 * o.destroyed_s / dur).toFixed(2) + '%' },
-        title: `${o.type} de ${m.team_names[o.owner_team]} · ${fmt.mmss(o.destroyed_s)}` }, objectiveImg(o.type, o.owner_team, { size: 'sm' })))));
+  const GAP = 6, ROW_PX = 28; // % mínimo entre marcas de una misma fila; alto de cada fila de marcas
+  const row = (name, alias, color, list) => {
+    const lastX = []; // última posición (%) por fila: las marcas cercanas bajan a otra fila
+    const marks = list.slice().sort((a, b) => a.destroyed_s - b.destroyed_s).map(o => {
+      const x = 100 * o.destroyed_s / dur;
+      let r = lastX.findIndex(lx => x - lx >= GAP);
+      if (r < 0) r = lastX.length;
+      lastX[r] = x;
+      return { o, x, r };
+    });
+    const rows = Math.max(1, lastX.length);
+    return el('div', { class: 'lane-row', style: { '--lane': color } },
+      el('div', { class: 'ln' }, name, alias ? el('small', {}, alias) : null),
+      el('div', { class: 'lane-track', role: 'list', 'aria-label': `Objetivos destruidos en ${name}`, style: { height: (6 + rows * ROW_PX) + 'px' } },
+        marks.map(({ o, x, r }) => el('span', { class: `ev t${o.owner_team}`, role: 'listitem', style: { left: x.toFixed(2) + '%', top: (3 + ROW_PX * (r + 0.5)) + 'px' },
+          title: `${o.type} de ${m.team_names[o.owner_team]} · ${fmt.mmss(o.destroyed_s)}` }, objectiveImg(o.type, o.owner_team, { size: 'sm' })))));
+  };
   const axis = el('div', { class: 'lane-row lane-axis', 'aria-hidden': 'true' }, el('div'),
     el('div', { class: 'lane-track' }, Array.from({ length: Math.floor(dur / 600) + 1 }, (_, i) => el('span', { class: 'tick', style: { left: (100 * i * 600 / dur) + '%' } }, `${i * 10}'`))));
   return el('div', { class: 'lane-tracks' },
@@ -332,7 +344,7 @@ async function minimapa(root, m, tname) {
     const keep = p => (st.team === 'all' || String(p.team) === st.team) && (st.slot === 'all' || String(p.slot) === st.slot);
     const layers = [];
     let n = 0;
-    if (st.lanes) for (const lp of info.lane_paths || []) layers.push({ kind: 'paths', paths: [lp.points], color: lp.color, width: 3, alpha: 0.55 });
+    if (st.lanes) for (const lp of info.lane_paths || []) layers.push({ kind: 'paths', paths: [lp.points], color: lp.color, width: 4, alpha: 0.55 });
     if (st.heat) for (const team of [0, 1]) {
       const pts = [];
       for (const p of pos.players.filter(p => p.team === team && keep(p))) {
@@ -346,14 +358,15 @@ async function minimapa(root, m, tname) {
     if (st.objImgs && info.objective_positions) {
       const items = [];
       for (const [k, v] of Object.entries(info.objective_positions)) {
-        const src = /tier2/.test(k) ? '/img/wiki/Walker_Icon.png' : /titan|core/.test(k) ? '/img/wiki/Patrons.png' : null;
-        if (!src && !/tier1/.test(k)) continue; // Guardian (tier1): sin imagen -> círculo del color del equipo
+        const type = /tier1/.test(k) ? 'Guardian' : /tier2/.test(k) ? 'Walker' : /titan|core/.test(k) ? 'Titan' : null;
+        if (!type) continue;
         const [x, y] = relToWorld(v.left_relative, v.top_relative);
-        items.push({ x, y, src, size: 26, label: k.startsWith('team0') ? COLORS.t0 : COLORS.t1 });
+        const color = k.startsWith('team0') ? COLORS.t0 : COLORS.t1;
+        items.push({ x, y, src: objectiveSrc(type), size: type === 'Guardian' ? 30 : 26, shape: 'diamond', color, label: color });
       }
       layers.push({ kind: 'images', items });
     }
-    if (st.koth && info.koth?.length) layers.push({ kind: 'images', items: info.koth.map(([x, y]) => ({ x, y, src: '/img/wiki/Unstable_Rift.png', size: 30, label: COLORS.neutral })) });
+    if (st.koth && info.koth?.length) layers.push({ kind: 'images', items: info.koth.map(([x, y]) => ({ x, y, src: objectiveSrc('KOTH'), size: 30, label: COLORS.neutral })) });
     if (st.objectives && info.objective_positions) {
       layers.push({ kind: 'markers', points: Object.entries(info.objective_positions).map(([k, v]) => {
         const [x, y] = relToWorld(v.left_relative, v.top_relative);

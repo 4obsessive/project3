@@ -179,6 +179,40 @@ class MapInfo(unittest.TestCase):
         self.assertEqual(info["lane_paths"][1]["lane"], 1)
         self.assertEqual(info["koth"], [[5, 6], [8, 9]])
 
+    def test_robust_to_missing_colour_and_unmatched_zipline(self):
+        from scouting import matches
+        app = App(None, _Upd(), 0)
+
+        class C:
+            def map_asset(self):
+                return {"zipline_paths": [
+                    {"origin": [0, 0, 0], "color": "#123456", "P0_points": [[1, 1, 1]]},
+                    {"origin": [0, 0, 0], "color": "#59B247", "P0_points": [[2, 3, 0]]}],
+                    "entities": {}}
+        app.client = C()
+        orig = matches.load_lane_styles
+        matches.load_lane_styles = lambda path=None: {
+            1: {"nombre": "York", "alias": ""}, 4: {"nombre": "Greenwich", "color": "#59b247", "alias": ""}}
+        try:
+            info = app.map_info(None)
+        finally:
+            matches.load_lane_styles = orig
+        self.assertEqual(info["lane_paths"], [{"lane": 4, "color": "#59B247", "points": [[2, 3]]}])
+        self.assertEqual(info["koth"], [])
+
+    def test_api_error_gives_empty_lists(self):
+        from scouting.api import ApiError
+        app = App(None, _Upd(), 0)
+
+        class C:
+            def map_asset(self):
+                raise ApiError(503, "sin red")
+        app.client = C()
+        info = app.map_info(None)
+        self.assertEqual(info["lane_paths"], [])
+        self.assertEqual(info["koth"], [])
+        self.assertIsNone(info["objective_positions"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -183,7 +183,7 @@ export class MapView {
     ctx.restore();
   }
 
-  /** Imágenes cargadas desde /img/... centradas en su posición; si no cargan, un círculo de color `label`. */
+  /** Imágenes cargadas desde /img/... centradas en su posición; si no cargan (o no tienen src), un círculo —o rombo con shape 'diamond'— de color `color`/`label`. */
   drawImages(ctx, L) {
     this.imgCache = this.imgCache || new Map();
     ctx.save();
@@ -208,8 +208,11 @@ export class MapView {
         ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
       } else {
         ctx.fillStyle = it.color || it.label || COLORS.neutral;
-        ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(x, y, s / 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (it.shape === 'diamond') { const r = s / 2; ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); }
+        else ctx.arc(x, y, s / 3, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
       }
     }
     ctx.restore();

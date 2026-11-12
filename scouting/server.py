@@ -376,7 +376,7 @@ class App:
             a = self.client.map_asset()
             info["objective_positions"] = a.get("objective_positions")
             info["radius"] = a.get("radius")
-            by_color = {v["color"].lower(): k for k, v in matches.load_lane_styles().items()}
+            by_color = {v["color"].lower(): k for k, v in matches.load_lane_styles().items() if v.get("color")}
             lane_paths = []
             for z in a.get("zipline_paths") or []:
                 ox, oy = (z.get("origin") or [0, 0])[:2]
