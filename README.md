@@ -53,11 +53,14 @@ Los datos se guardan en `data/` (`scouting.db` y `matches/*.json.gz`). Los campo
 - **Climbers**: la API no da el ranking pasado; se compara entre snapshots propios, que se acumulan desde la primera descarga.
 - **Dúos**: `mate-stats` da las partidas en grupo con cada compañero; si en una partida solo aparece un compañero, era un dúo. El resultado sale del historial de partidas.
 - **Informe de equipo**: registro de métricas en `scouting/report/metricas/`. Cada archivo registra una función con `@metric(...)` que devuelve bloques (`text`, `table`, `bars`, `histogram`, `timeline`, `map`, `unavailable`); la web los pinta sin conocer la métrica. Para añadir una métrica, crea un archivo nuevo en esa carpeta. Si una métrica falla, solo falla su sección.
+- **Imágenes** (`/img/`): el navegador solo carga recursos de la propia app (CSP), así que el servidor hace de proxy-caché de las imágenes de dos orígenes permitidos, `cdn.deadlock.wiki` y `assets-bucket.deadlock-api.com`. Se guardan en `data/cache/img/` la primera vez que se piden; no se versiona ninguna imagen. Si una no carga, la web muestra un icono o la inicial del héroe.
+- **Carriles por color**: York (amarillo `#F1CC30`), Broadway (azul `#29b1cc`) y Greenwich (verde `#59b247`), iguales para ambos equipos. Los colores y alias se pueden editar en `objetivos.json` (bloque `colores`).
 
 ## Seguridad y privacidad
 
 - Escucha solo en `127.0.0.1`, valida la cabecera `Host` (contra DNS rebinding) y solo acepta escrituras en JSON.
 - No hace scraping de datos personales. Redes y mayor de edad se rellenan a mano con lo que el jugador hace público; nunca se guarda la edad exacta.
+- Salidas a internet: además de la API de Deadlock, la app descarga imágenes de `cdn.deadlock.wiki` y `assets-bucket.deadlock-api.com`. Solo esos dos hosts (lista cerrada), sin seguir redirecciones, con límite de tamaño (5 MB) y solo PNG/JPEG/WebP; las peticiones de otros sitios al proxy se rechazan.
 - Lo que la API no da (KOTH/Rifts, cristales del Midboss, curación por héroe en hero-stats…) se muestra como «no disponible».
 
 ## Estructura
