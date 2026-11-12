@@ -44,6 +44,18 @@ class LaneTests(unittest.TestCase):
             json.dump(d, f)
         self.assertEqual(matches.load_lane_styles(p)[1]["color"], "#F1CC30")
 
+    def test_non_dict_colores_entry_is_ignored(self):
+        with open(config.OBJECTIVES_PATH, encoding="utf-8") as f:
+            d = json.load(f)
+        d["colores"] = {"1": "rojo", "3": None, "4": {"color": "#111111", "alias": "x"}}
+        p = os.path.join(self.tmp, "objetivos.json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(d, f)
+        s = matches.load_lane_styles(p)
+        self.assertEqual(s[1]["color"], "#F1CC30")
+        self.assertEqual(s[3]["color"], "#29b1cc")
+        self.assertEqual(s[4]["color"], "#111111")
+
     def test_objective_label_uses_lane_name(self):
         objs, lanes = matches.load_objective_map()
         self.assertEqual(matches.objective_label(1, objs, lanes), "Guardian · York")
@@ -83,6 +95,22 @@ class LaneTests(unittest.TestCase):
         with self.assertRaises(server.HttpError) as cm:
             self._post(body)
         self.assertEqual(cm.exception.status, 400)
+
+    def test_post_with_non_dict_colores_is_400(self):
+        objs, lanes = matches.load_objective_map()
+        for bad in ([1], "x", {"1": "rojo"}, {"1": None}):
+            body = {"objetivos": {str(k): v for k, v in objs.items()}, "carriles": {}, "colores": bad}
+            with self.assertRaises(server.HttpError, msg=repr(bad)) as cm:
+                self._post(body)
+            self.assertEqual(cm.exception.status, 400)
+
+    def test_timeline_events_carry_owner(self):
+        out = report.run("x", [FIXTURE], TEAM1_ACCOUNTS)
+        blocks = next(s for s in out["sections"] if s["id"] == "carriles")["blocks"]
+        tl = next(b for b in blocks if b["type"] == "timeline")
+        evs = [e for r in tl["rows"] for e in r["events"]]
+        self.assertTrue(evs)
+        self.assertTrue(all(e["owner"] in (0, 1) for e in evs))
 
 
 if __name__ == "__main__":

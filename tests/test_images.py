@@ -34,7 +34,7 @@ class ImageProxy(_CacheCase):
     def test_safe_name(self):
         self.assertEqual(images.safe_name("wiki", "Mo_&_Krill_vertical.png"), "Mo_&_Krill_vertical.png")
         self.assertEqual(images.safe_name("api", "heroes/abrams_sm.webp"), "heroes/abrams_sm.webp")
-        for bad in ["../x.png", "a/../../b.png", "/etc/x.png", "x.exe", "x.png?y=1", "C:x.png", "", "a\b.png"]:
+        for bad in ["../x.png", "a/../../b.png", "/etc/x.png", "x.exe", "x.png?y=1", "C:x.png", "", r"a\b.png", "a.svg"]:
             self.assertIsNone(images.safe_name("wiki", bad), bad)
             self.assertIsNone(images.safe_name("api", bad), bad)
         self.assertIsNone(images.safe_name("evil", "x.png"))
@@ -82,6 +82,35 @@ class ImageProxy(_CacheCase):
         self.assertIsNone(images.get("wiki", "nope.png", opener))
         self.assertEqual(len(calls), 1)
 
+    def test_svg_content_type_rejected(self):
+        self.assertIsNone(images.get("wiki", "a.png", lambda u: (200, {"Content-Type": "image/svg+xml"}, b"<svg/>")))
+        self.assertEqual(self._written(), [])
+
+    def test_locks_and_failed_are_pruned(self):
+        images._LOCKS.clear()
+        images.get("wiki", "ok.png", lambda u: (200, {"Content-Type": "image/png"}, PNG_1PX))
+        self.assertEqual(images._LOCKS, {})
+        images._FAILED[("wiki", "old.png")] = 0  # caducado hace mucho
+        images.get("wiki", "nope.png", lambda u: (404, {}, b""))
+        self.assertNotIn(("wiki", "old.png"), images._FAILED)
+        self.assertIn(("wiki", "nope.png"), images._FAILED)
+        self.assertEqual(images._LOCKS, {})
+
+    def test_unreadable_cached_file_is_a_miss(self):
+        from unittest import mock
+        os.makedirs(os.path.join(self.tmp, "wiki"))
+        fp = os.path.join(self.tmp, "wiki", "z.png")
+        with open(fp, "wb") as f:
+            f.write(PNG_1PX)
+        real = open
+
+        def bad_open(path, *a, **k):
+            if str(path) == fp:
+                raise PermissionError("denegado")
+            return real(path, *a, **k)
+        with mock.patch("builtins.open", bad_open):
+            self.assertIsNone(images.get("wiki", "z.png", lambda u: (404, {}, b"")))
+
     def test_opener_exception_is_failure(self):
         def opener(url):
             raise OSError("sin red")
@@ -108,10 +137,12 @@ class ImageRoute(_CacheCase):
         self.httpd.shutdown()
         self.httpd.server_close()
 
-    def _req(self, path, host=None):
+    def _req(self, path, host=None, headers=None):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         c.putrequest("GET", path, skip_host=True)
         c.putheader("Host", host or f"127.0.0.1:{self.port}")
+        for k, v in (headers or {}).items():
+            c.putheader(k, v)
         c.endheaders()
         r = c.getresponse()
         data = r.read()
@@ -134,6 +165,10 @@ class ImageRoute(_CacheCase):
         self.assertEqual(r.getheader("X-Content-Type-Options"), "nosniff")
         r, _ = self._req("/img/wiki/Walker_Icon.png", host="evil.com")
         self.assertEqual(r.status, 403)
+        r, _ = self._req("/img/wiki/Walker_Icon.png", headers={"Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(r.status, 403)
+        r, _ = self._req("/img/wiki/Walker_Icon.png", headers={"Sec-Fetch-Site": "same-origin"})
+        self.assertEqual(r.status, 200)
 
 
 class HeroesPayload(unittest.TestCase):
@@ -197,8 +232,25 @@ class MapInfo(unittest.TestCase):
             info = app.map_info(None)
         finally:
             matches.load_lane_styles = orig
-        self.assertEqual(info["lane_paths"], [{"lane": 4, "color": "#59B247", "points": [[2, 3]]}])
+        self.assertEqual(info["lane_paths"], [{"lane": 4, "color": "#59b247", "points": [[2, 3]]}])
         self.assertEqual(info["koth"], [])
+
+    def test_edited_file_colour_keeps_path(self):
+        from scouting import matches
+        app = App(None, _Upd(), 0)
+
+        class C:
+            def map_asset(self):
+                return {"zipline_paths": [{"origin": [0, 0, 0], "color": "#F1CC30", "P0_points": [[2, 3, 0]]}],
+                        "entities": {}}
+        app.client = C()
+        orig = matches.load_lane_styles
+        matches.load_lane_styles = lambda path=None: {1: {"nombre": "York", "color": "#ff0000", "alias": ""}}
+        try:
+            info = app.map_info(None)
+        finally:
+            matches.load_lane_styles = orig
+        self.assertEqual(info["lane_paths"], [{"lane": 1, "color": "#ff0000", "points": [[2, 3]]}])
 
     def test_api_error_gives_empty_lists(self):
         from scouting.api import ApiError

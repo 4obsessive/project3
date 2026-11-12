@@ -148,7 +148,7 @@ function mainHeroAvatar(p, heroById) {
   const top = p.heroes && p.heroes[0];
   if (!top) return null;
   const h = heroById.get(top.hero_id) || { id: top.hero_id, name: top.name };
-  return heroPortrait(h, { size: 'sm', shape: 'round' });
+  return heroPortrait(h, { size: 'sm', shape: 'round', decorative: true });
 }
 
 function scoreBar(p) {

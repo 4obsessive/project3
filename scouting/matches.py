@@ -145,7 +145,8 @@ def load_lane_styles(path=None):
     with open(path, encoding="utf-8") as f:
         d = json.load(f)
     names = {int(k): v for k, v in d.get("carriles", {}).items()}
-    colores = {int(k): v for k, v in (d.get("colores") or {}).items()}
+    raw = d.get("colores")
+    colores = {int(k): v for k, v in (raw if isinstance(raw, dict) else {}).items() if isinstance(v, dict)}
     out = {k: dict(v) for k, v in LANE_DEFAULTS.items()}
     for k in set(names) | set(colores):
         st = out.setdefault(k, {"nombre": f"Carril {k}", "color": "#888888", "alias": ""})

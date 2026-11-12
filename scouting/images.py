@@ -22,7 +22,7 @@ TIMEOUT = 15
 USER_AGENT = "deadlock-scouting-local/1.0"
 
 _SEGMENT = re.compile(r"[A-Za-z0-9_\-.&%()]+\Z")
-_EXT = re.compile(r"\.(png|jpe?g|webp|svg)\Z", re.I)
+_EXT = re.compile(r"\.(png|jpe?g|webp)\Z", re.I)
 _FAILED = {}
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
@@ -84,6 +84,15 @@ def _write(fp, data):
     os.replace(tmp, fp)
 
 
+def _read_cached(fp):
+    """(bytes, content-type) del archivo en caché, o None si no existe o no se puede leer."""
+    try:
+        with open(fp, "rb") as f:
+            return f.read(), _ctype_of(fp)
+    except OSError:
+        return None
+
+
 def get(origin, name, opener=None):
     """(bytes, content-type) de la imagen, descargándola si hace falta; None si no está disponible."""
     name = safe_name(origin, name)
@@ -91,33 +100,39 @@ def get(origin, name, opener=None):
         return None
     fp, tp = _paths(origin, name)
     if os.path.isfile(fp):
-        with open(fp, "rb") as f:
-            return f.read(), _ctype_of(fp)
+        return _read_cached(fp)
     key = (origin, name)
     with _LOCKS_GUARD:
         lock = _LOCKS.setdefault(key, threading.Lock())
-    with lock:
-        if os.path.isfile(fp):  # otro hilo la acaba de bajar
-            with open(fp, "rb") as f:
-                return f.read(), _ctype_of(fp)
-        ts = _FAILED.get(key)
-        if ts is not None and time.time() - ts < FAIL_TTL:
-            return None
-        url = SOURCES[origin] + urllib.parse.quote(name, safe="/")
-        try:
-            status, headers, body = (opener or _default_opener)(url)
-        except Exception:
-            status, headers, body = 0, {}, b""
-        ctype = ""
-        for k, v in (headers or {}).items():
-            if k.lower() == "content-type":
-                ctype = str(v).split(";")[0].strip().lower()
-        if status != 200 or not ctype.startswith("image/") or not body or len(body) > MAX_BYTES:
-            _FAILED[key] = time.time()
-            return None
-        try:
-            _write(fp, body)
-            _write(tp, ctype.encode("ascii", "ignore"))
-        except OSError:
-            pass  # sin caché en disco, pero se sirve igual
-        return body, ctype
+    try:
+        with lock:
+            if os.path.isfile(fp):  # otro hilo la acaba de bajar
+                return _read_cached(fp)
+            ts = _FAILED.get(key)
+            if ts is not None and time.time() - ts < FAIL_TTL:
+                return None
+            url = SOURCES[origin] + urllib.parse.quote(name, safe="/")
+            try:
+                status, headers, body = (opener or _default_opener)(url)
+            except Exception:
+                status, headers, body = 0, {}, b""
+            ctype = ""
+            for k, v in (headers or {}).items():
+                if k.lower() == "content-type":
+                    ctype = str(v).split(";")[0].strip().lower()
+            if (status != 200 or not ctype.startswith("image/") or ctype == "image/svg+xml"
+                    or not body or len(body) > MAX_BYTES):
+                now = time.time()
+                for k in [k for k, t in _FAILED.items() if now - t >= FAIL_TTL]:
+                    _FAILED.pop(k, None)
+                _FAILED[key] = now
+                return None
+            try:
+                _write(fp, body)
+                _write(tp, ctype.encode("ascii", "ignore"))
+            except OSError:
+                pass  # sin caché en disco, pero se sirve igual
+            return body, ctype
+    finally:
+        with _LOCKS_GUARD:
+            _LOCKS.pop(key, None)

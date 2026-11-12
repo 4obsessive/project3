@@ -33,7 +33,7 @@ export async function openProfile(pid, ctx) {
   d.append(el('h3', {}, 'Top 5 héroes del mes'),
     p.top_heroes.length
       ? el('div', { class: 'top-heroes' }, p.top_heroes.map(h => el('div', { class: 'th-card' },
-          heroPortrait(heroById.get(h.hero_id) || { id: h.hero_id, name: h.name }, { size: 'lg', shape: 'card' }),
+          heroPortrait(heroById.get(h.hero_id) || { id: h.hero_id, name: h.name }, { size: 'lg', shape: 'card', decorative: true }),
           el('div', { class: 'th-body' }, el('b', {}, h.name),
             el('span', { class: 'th-stats' }, `${fmt.int(h.matches)} partidas · WR ${fmt.pct(h.winrate)} · KDA ${fmt.dec(h.kda)}`)))))
       : el('p', { class: 'muted' }, 'Sin héroes registrados.'));

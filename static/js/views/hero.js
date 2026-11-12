@@ -22,7 +22,7 @@ export async function render(root, ctx) {
   const btns = new Map();
   for (const h of heroes) {
     const b = el('button', { type: 'button', class: 'hp-card' + (h.id === heroId ? ' active' : ''), 'aria-pressed': String(h.id === heroId), title: h.name,
-      onclick: () => choose(h.id) }, heroPortrait(h, { size: 'md', shape: 'card' }), el('span', { class: 'hp-name' }, h.name));
+      onclick: () => choose(h.id) }, heroPortrait(h, { size: 'md', shape: 'card', decorative: true }), el('span', { class: 'hp-name' }, h.name));
     btns.set(h.id, b);
     grid.append(b);
   }

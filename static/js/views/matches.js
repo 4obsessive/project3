@@ -5,7 +5,7 @@ import { timeline } from '../charts.js';
 import { renderExplorer } from './explorer.js';
 import { openProfile } from './profile.js';
 import { icon } from '../icons.js';
-import { heroPortrait, objectiveImg, objectiveSrc, laneStyle } from '../art.js';
+import { heroPortrait, objectiveImg, objectiveSrc, laneStyle, laneChip } from '../art.js';
 import { matchRow } from './home.js';
 
 export async function render(root, ctx) {
@@ -230,6 +230,7 @@ function objetivos(root, m, tname) {
   root.append(el('p', { class: 'muted small' }, '«Equipo» es el DUEÑO del objetivo; lo destruye el rival. Si no cayó, se muestra el primer golpe. El mapeo de IDs es inferido (editable en Ajustes).'));
   const cols = [
     { key: 'label', label: 'Objetivo' }, { key: 'objective_id', label: 'ID' },
+    { key: 'lane', label: 'Carril', render: r => r.lane ? laneChip(r.lane, m.lanes) : '' },
     { key: 'destroyed_s', label: 'Cae', fmt: 'mmss' },
     { key: 'first_damage_s', label: 'Primer golpe', render: r => r.destroyed_s ? fmt.mmss(r.first_damage_s) : (r.first_damage_s ? `${fmt.mmss(r.first_damage_s)} (no cayó)` : 'sin daño') },
     { key: 'player_damage', label: 'Daño de jugadores', fmt: 'int' }, { key: 'creep_damage', label: 'Daño de tropas', fmt: 'int' },
@@ -362,7 +363,7 @@ async function minimapa(root, m, tname) {
         if (!type) continue;
         const [x, y] = relToWorld(v.left_relative, v.top_relative);
         const color = k.startsWith('team0') ? COLORS.t0 : COLORS.t1;
-        items.push({ x, y, src: objectiveSrc(type), size: type === 'Guardian' ? 30 : 26, shape: 'diamond', color, label: color });
+        items.push({ x, y, src: objectiveSrc(type), size: type === 'Guardian' ? 30 : 26, shape: type === 'Guardian' ? 'diamond' : undefined, color, label: color });
       }
       layers.push({ kind: 'images', items });
     }

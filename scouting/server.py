@@ -358,8 +358,12 @@ class App:
             lanes = {int(k): str(v) for k, v in body.get("carriles", {}).items()}
             colores = None
             if body.get("colores") is not None:
+                if not isinstance(body["colores"], dict):
+                    raise ValueError("colores debe ser un objeto")
                 colores = {}
                 for k, v in body["colores"].items():
+                    if not isinstance(v, dict):
+                        raise ValueError("cada color debe ser un objeto")
                     color = str(v["color"])
                     if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
                         raise ValueError(f"color no válido: {color}")
@@ -376,14 +380,16 @@ class App:
             a = self.client.map_asset()
             info["objective_positions"] = a.get("objective_positions")
             info["radius"] = a.get("radius")
-            by_color = {v["color"].lower(): k for k, v in matches.load_lane_styles().items() if v.get("color")}
+            styles = matches.load_lane_styles()
+            by_color = {v["color"].lower(): k for k, v in matches.LANE_DEFAULTS.items()}
             lane_paths = []
             for z in a.get("zipline_paths") or []:
                 ox, oy = (z.get("origin") or [0, 0])[:2]
                 pts = [[ox + p[0], oy + p[1]] for p in z.get("P0_points") or []]
                 lane = by_color.get(str(z.get("color", "")).lower())
                 if lane is not None and pts:
-                    lane_paths.append({"lane": lane, "color": z["color"], "points": pts})
+                    lane_paths.append({"lane": lane, "color": (styles.get(lane) or {}).get("color") or z["color"],
+                                       "points": pts})
             info["lane_paths"] = lane_paths
             info["koth"] = [[r["position"][0], r["position"][1]]
                             for r in (a.get("entities") or {}).get("unstable_rifts") or []
@@ -553,6 +559,8 @@ def make_handler(app):
                     return self._error(403, "Petición entre sitios no permitida")
                 return self._api("GET", u, b"")
             if u.path.startswith("/img/"):
+                if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
+                    return self._error(403, "Petición entre sitios no permitida")
                 return self._image(u.path)
             return self._static(u.path)
 

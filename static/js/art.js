@@ -2,28 +2,27 @@
 // Todo se pide al proxy local (/img/...); nunca al exterior (CSP: img-src 'self').
 import { el } from './util.js';
 import { icon } from './icons.js';
-import { api } from './api.js';
 
 /** "Mo & Krill" -> "Mo_%26_Krill_vertical.png" */
 export function wikiHeroFile(name) {
   return String(name).trim().replace(/&/g, '%26').replace(/\s+/g, '_') + '_vertical.png';
 }
 
-function initial(name, size, shape) {
+function initial(name, size, shape, decorative = false) {
   const ch = (String(name || '?').trim()[0] || '?').toUpperCase();
-  return el('span', { class: `avatar initial ${size} ${shape}`, 'aria-label': name || '' }, ch);
+  return el('span', { class: `avatar initial ${size} ${shape}`, ...(decorative ? { 'aria-hidden': 'true' } : { 'aria-label': name || '' }) }, ch);
 }
 
 /** Retrato: wiki -> imagen de la API -> inicial. */
-export function heroPortrait(hero, { size = 'md', shape = 'card' } = {}) {
+export function heroPortrait(hero, { size = 'md', shape = 'card', decorative = false } = {}) {
   const name = hero.name || '';
   const chain = [hero.wiki_image || '/img/wiki/' + wikiHeroFile(name), hero.image].filter(Boolean);
-  const img = el('img', { class: `portrait ${size} ${shape}`, loading: 'lazy', alt: name, src: chain[0] });
+  const img = el('img', { class: `portrait ${size} ${shape}`, loading: 'lazy', alt: decorative ? '' : name, src: chain[0] });
   let i = 0;
   img.addEventListener('error', () => {
     i += 1;
     if (i < chain.length) img.src = chain[i];
-    else img.replaceWith(initial(name, size, shape));
+    else img.replaceWith(initial(name, size, shape, decorative));
   });
   return img;
 }
@@ -97,19 +96,4 @@ export function laneChip(laneId, lanes) {
   return el('span', { class: 'lane-chip', style: { '--lane': l.color } },
     el('span', { class: 'lane-dot', 'aria-hidden': 'true' }),
     l.nombre, l.alias ? el('small', {}, ' · ' + l.alias) : null);
-}
-
-let lanesCache = null;
-/** { "1": {nombre,color,alias}, ... } desde /api/objective-map (cacheado). */
-export async function getLanes() {
-  if (!lanesCache) {
-    const om = await api.get('/api/objective-map');
-    const out = {};
-    for (const [id, nombre] of Object.entries(om.carriles || {})) {
-      const c = (om.colores || {})[id] || {};
-      out[id] = { nombre, color: c.color, alias: c.alias };
-    }
-    lanesCache = out;
-  }
-  return lanesCache;
 }

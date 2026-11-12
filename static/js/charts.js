@@ -161,7 +161,7 @@ export function timeline({ rows, lanes = null, label = '' }) {
       // «them»/t1 huecos (solo contorno): distinguibles sin color
       const paint = hatched(e) ? { fill: 'none', stroke: c, 'stroke-width': 2 } : { fill: c };
       const g = s('g', {}, s('title', {}, `${fmt.mmss(e.t)} · ${e.label}`));
-      const src = e.kind ? objectiveSrc(e.kind) : null;
+      const src = e.kind ? objectiveSrc(e.kind, e.owner) : null;
       const plain = () => { const node = shapeNode(kind, x, cy); for (const [k, v] of Object.entries(paint)) node.setAttribute(k, v); return node; };
       if (src) {
         hasImg = true;

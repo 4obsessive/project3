@@ -48,8 +48,8 @@ def carriles(ctx):
             times[("taken", r["type"], r["lane"])].append(r["destroyed_s"])
         seq_lost[tuple(_step(r) for r in ours)] += 1 if ours else 0
         seq_taken[tuple(_step(r) for r in theirs)] += 1 if theirs else 0
-        ev = [{"t": r["destroyed_s"], "label": f"{r['label']} perdido", "side": "them", "kind": r["type"]} for r in m.objectives if r["owner_team"] == m.our and r["destroyed_s"]]
-        ev += [{"t": r["destroyed_s"], "label": f"{r['label']} rival destruido", "side": "us", "kind": r["type"]} for r in m.objectives if r["owner_team"] == m.their and r["destroyed_s"]]
+        ev = [{"t": r["destroyed_s"], "label": f"{r['label']} perdido", "side": "them", "kind": r["type"], "owner": r["owner_team"]} for r in m.objectives if r["owner_team"] == m.our and r["destroyed_s"]]
+        ev += [{"t": r["destroyed_s"], "label": f"{r['label']} rival destruido", "side": "us", "kind": r["type"], "owner": r["owner_team"]} for r in m.objectives if r["owner_team"] == m.their and r["destroyed_s"]]
         timeline.append({"label": f"{m.id} ({'V' if m.won else 'D'})", "duration": m.duration, "events": sorted(ev, key=lambda e: e["t"])})
     lanes = [l for l in lanes if l in present] or lanes
     ln = lambda l: lane_names.get(l, f"Carril {l}")
