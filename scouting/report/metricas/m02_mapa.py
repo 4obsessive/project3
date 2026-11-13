@@ -7,7 +7,7 @@ from ...minimap import load_calibration
 
 @metric("mapa", "Kills y muertes en el minimapa", order=20)
 def mapa(ctx):
-    cal = load_calibration()
+    cal = ctx.calibration or load_calibration()
     normalize = bool(ctx.params.get("normalize"))
     kills_pts, death_pts = [], []
     cell_k, cell_d = defaultdict(int), defaultdict(int)

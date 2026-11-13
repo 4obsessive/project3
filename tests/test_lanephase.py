@@ -476,6 +476,32 @@ class ReportLanes(unittest.TestCase):
         self.assertTrue(any(b.get("type") == "unavailable" and "gankeo" in b.get("title", "").lower() for b in sec["blocks"]))
 
 
+class ReportLoadsOnce(unittest.TestCase):
+    def test_paths_and_calibration_loaded_once_per_report(self):
+        from unittest import mock
+        from scouting import minimap, report
+        mi = _mi()
+        roster = {p["account_id"] for p in mi["players"] if p["team"] == 1}
+        datas = []
+        for i in range(3):
+            m = copy.deepcopy(mi)
+            m["match_id"] = 135801973 + i
+            datas.append({"match_info": m})
+        n = {"paths": 0, "cal": 0}
+        real_paths, real_cal = lanes.load_paths, minimap.load_calibration
+
+        def fp(*a, **k):
+            n["paths"] += 1
+            return real_paths(*a, **k)
+
+        def fc(*a, **k):
+            n["cal"] += 1
+            return real_cal(*a, **k)
+        with mock.patch.object(lanes, "load_paths", fp), mock.patch.object(minimap, "load_calibration", fc),                 mock.patch.object(playerstats, "load_calibration", fc):
+            report.run("T", datas, roster)
+        self.assertEqual(n, {"paths": 1, "cal": 1})
+
+
 class LanePhaseFallbacks(unittest.TestCase):
     """Demo incompleto (límite de tick por debajo de 600 s de juego) o sin filas utilizables → aprox, nunca ceros."""
 

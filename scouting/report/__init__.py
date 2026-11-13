@@ -42,7 +42,7 @@ def _load_all():
 
 # ------------------------------------------------------------------ contexto
 class MatchCtx:
-    def __init__(self, data, our, side_source, roster_counts, demo_summary=None, lane_data=None):
+    def __init__(self, data, our, side_source, roster_counts, demo_summary=None, lane_data=None, lane_paths=None, calibration=None):
         self.data = data
         self.mi = data["match_info"]
         self.id = self.mi["match_id"]
@@ -56,6 +56,8 @@ class MatchCtx:
         self._objs = None
         self._demo = demo_summary
         self._lane_data = lane_data
+        self._lane_paths = lane_paths      # cargados una vez por informe (None → se cargan aquí)
+        self._calibration = calibration
         self._lane_phase = None
         self._player_stats = None
 
@@ -72,14 +74,14 @@ class MatchCtx:
             from .. import lanephase
             ld = self._lane_data
             self._lane_phase = lanephase.lane_phase(self.mi, ld["rows"] if ld else None, ld["rules"] if ld else None,
-                                                    tick_limit=ld.get("limit") if ld else None)
+                                                    paths=self._lane_paths, tick_limit=ld.get("limit") if ld else None)
         return self._lane_phase
 
     @property
     def player_stats(self):
         if self._player_stats is None:
             from .. import playerstats
-            self._player_stats = playerstats.player_stats(self.mi, self.lane_phase)
+            self._player_stats = playerstats.player_stats(self.mi, self.lane_phase, cal=self._calibration)
         return self._player_stats
 
     @property
@@ -116,6 +118,7 @@ class ReportCtx:
         self.findings = []
         self.player_ids = {}
         self.hero_names = {}
+        self.calibration = None
 
     def hero(self, hid):
         return self.hero_names.get(hid) or f"#{hid}"
@@ -190,6 +193,7 @@ def run(team, match_datas, roster, side_overrides=None, params=None, demo_summar
     params = dict({"midboss_window_s": 90, "normalize": True}, **(params or {}))
     demo_summaries = demo_summaries or {}
     lane_data = lane_data or {}
+    lane_paths, cal = _load_once()
     side_overrides = {int(k): int(v) for k, v in (side_overrides or {}).items() if v in (0, 1, "0", "1")}
     ctxs, skipped, sides = [], [], []
     for d in match_datas:
@@ -204,8 +208,9 @@ def run(team, match_datas, roster, side_overrides=None, params=None, demo_summar
         if our is None:
             skipped.append({"match_id": mid, "reason": "No se pudo detectar el lado (ningún jugador de la plantilla o empate). Elige el lado a mano."})
             continue
-        ctxs.append(MatchCtx(d, our, src, counts, demo_summaries.get(mid), lane_data.get(mid)))
+        ctxs.append(MatchCtx(d, our, src, counts, demo_summaries.get(mid), lane_data.get(mid), lane_paths, cal))
     ctx = ReportCtx(team, ctxs, params, skipped)
+    ctx.calibration = cal
     ctx.player_ids = {int(k): v for k, v in (player_ids or {}).items()}
     ctx.hero_names = {int(k): v for k, v in (hero_names or {}).items()}
     sections = []
@@ -219,6 +224,20 @@ def run(team, match_datas, roster, side_overrides=None, params=None, demo_summar
         sections.append(_run_one(conclusions, ctx))
     return {"team": team, "n": ctx.n, "params": params, "sides": sides, "skipped": skipped, "our_heroes": _our_heroes(ctxs),
             "lanes": M.lanes_payload(), "team_names": M.TEAM_NAMES, "team_names_verified": M.TEAM_NAMES_VERIFIED, "sections": sections}
+
+
+def _load_once():
+    """Recorridos de los carriles y calibración del minimapa, una vez por informe. Si fallan, None: cada
+    partida los vuelve a pedir y el error queda en su sección (como antes)."""
+    from .. import lanes, minimap
+    out = []
+    for fn in (lanes.load_paths, minimap.load_calibration):
+        try:
+            out.append(fn())
+        except Exception:
+            traceback.print_exc()
+            out.append(None)
+    return out
 
 
 def _our_heroes(ctxs, limit=12):
