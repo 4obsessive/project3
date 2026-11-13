@@ -5,7 +5,7 @@ Herramienta local (solo en tu ordenador) para:
 1. **Scouting de jugadores**: leaderboard de una región, stats del último mes por jugador y héroe, roles, equipos, libres, notas de contacto, climbers y dúos.
 2. **Análisis de partidas y equipos**: partidas por ID o JSON, objetivos, Midboss, minimapa, explorador de todos los campos e **informe estadístico de un equipo** a partir de N partidas.
 
-Datos: [deadlock-api.com](https://api.deadlock-api.com/docs).
+**La interfaz web está toda en inglés** (este README y HANDOFF.md siguen en español, son para quien desarrolla). Datos: [deadlock-api.com](https://api.deadlock-api.com/docs).
 
 ## Arrancar
 
@@ -65,6 +65,10 @@ Los datos se guardan en `data/` (`scouting.db` y `matches/*.json.gz`). Los campo
 - **Sin demo («aprox.»)**: el daño de la fase de líneas se interpola al 600 s desde las muestras `stats` (`player_damage`/`player_damage_taken`), sin separar gankeos de daño de línea; los gankeos (recuentos y primer gankeo) salen «–», no disponibles, porque necesitan el demo. Cada bloque dice su fuente y en cuántas partidas. En el informe las medias de daño y la tabla/hallazgos de primer gankeo usan solo partidas con demo; las aproximadas no se mezclan.
 - **Desglose por jugador** (`scouting/playerstats.py`): héroes, línea, KDA, dónde muere y mata (celdas de la **posición de muerte de la víctima**, con la base propia siempre abajo), farm, economía, daño hecho/recibido y números de la fase de líneas. El informe (`m07_fase_lineas.py`, `m08_jugadores.py`) suma las partidas del equipo analizado con su `n`; la vista de una partida tiene las pestañas **«Fase de líneas»** y **«Jugadores»** con los mismos bloques para esa partida (ambos equipos, 6 dúos, 12 jugadores).
 - **Nombre del jugador**: nombre en la app (`display_name` del jugador, con sus cuentas enlazadas), después nombre de Steam, y por último el `account_id`.
+- **Interfaz en inglés**: todas las vistas, el informe, hallazgos, avisos y errores visibles están en inglés, con formato en-US (números y fechas). Rutas: `#home`, `#players`, `#hero`, `#climbers`, `#teams`, `#matches`, `#report`, `#settings` (los enlaces antiguos en español siguen funcionando). Los valores guardados en la base de datos (estado, mayor de edad) siguen en español internamente y se muestran con etiqueta en inglés. `tests/test_ui_english.py` y `tests/test_report_english.py` vigilan que no queden textos en español.
+- **Peleas de objetivo** (`scouting/fights.py`): cada kill/muerte (posición = donde murió la víctima) se clasifica como `midboss`, `koth`, `rest` o `unknown`. Midboss: a ≤ `MIDBOSS_RADIUS` (2500) del pozo (0, 0) y en [primer daño al Midboss (`t_first`), su muerte + `AFTER_S` (60 s)]; sin demo, [muerte − 60 s, muerte + 60 s] con `mid_boss[].destroyed_time_s`. KOTH: a ≤ `RIFT_RADIUS` (2000) de alguna grieta (±7648, 0) y en [inicio del cash-in, `end_t` + 60 s]; solo con demo (`koth_known`), sin demo no se marca ninguna pelea KOTH y la partida se excluye de las cifras «sin peleas de objetivo». Cash-in abandonado: `end_t` es el primer cierre observado (`koth_start` vuelve a 0 sin equipo anotador); si no hay, regla fija `KOTH_OPEN_S` (60) + 60 s = 120 s desde el inicio. Si cae en ambas ventanas, gana el objetivo más cercano. Sin posición → `unknown` (cuenta en totales, no en mapas ni en «resto»). El resumen del demo es `SUMMARY_VERSION = 3`; las partidas con resumen anterior se recalculan desde los datos crudos.
+- **Kills/muertes sin peleas de objetivo**: el informe (m02 mapa y m08 jugadores) y la vista de partida (pestaña «Players», conmutador **Minimap**) muestran mapas y tablas de zonas también solo con «resto», más el desglose midboss / KOTH / resto / sin posición. Los campos `*_rest` de `playerstats` y los bloques `rest_map` salen de los mismos datos en informe y partida.
+- **Estilo visual**: tarjetas destacadas con imagen, columna de héroes con retratos, iconos de objetivo y barras dentro de las celdas para comparar números; sin quitar ninguna cifra. Mismas imágenes del proxy `/img/` (sin hosts nuevos).
 - **Imágenes** (`/img/`): el navegador solo carga recursos de la propia app (CSP), así que el servidor hace de proxy-caché de las imágenes de dos orígenes permitidos, `cdn.deadlock.wiki` y `assets-bucket.deadlock-api.com`. Se guardan en `data/cache/img/` la primera vez que se piden; no se versiona ninguna imagen. Si una no carga, la web muestra un icono o la inicial del héroe.
 - **Estilo «City Never Sleeps»** (`static/app.css`, tokens en `:root`): fondo marrón cálido `--bg #1a1310`, texto crema `--text #f3e6cf`, acento naranja `--accent #e0612a`, turquesa `--teal #3fb8a8`, marcos claros `--frame #e9dcc3`; titulares de cartel con una palabra en etiqueta naranja, pasos numerados en círculo turquesa, retratos como cartas inclinadas y mapas en marcos. Sin fuentes externas (pila de sistema); colores de carril y de equipo intactos.
 - **Carriles por color**: York (amarillo `#F1CC30`), Broadway (azul `#29b1cc`) y Greenwich (verde `#59b247`), iguales para ambos equipos. Los colores y alias se pueden editar en `objetivos.json` (bloque `colores`).
@@ -90,7 +94,8 @@ scouting/matches.py        partidas: guardado, objetivos, Midboss, muertes, posi
 scouting/demo.py           datos del demo: cola, presupuesto, consultas SQL, resumen, relleno de lane_damage
 scouting/lanes.py          línea de cada jugador por posiciones (lane_paths.json)
 scouting/lanephase.py      fase de líneas: dúos, daño, Guardians, gankeos
-scouting/playerstats.py    desglose por jugador (zonas de muerte/kill, farm, economía)
+scouting/playerstats.py    desglose por jugador (zonas de muerte/kill, farm, economía, «resto»)
+scouting/fights.py         clasifica kills/muertes: midboss, KOTH, resto, desconocida
 scouting/minimap.py        imagen, calibración y recalibración
 scouting/report/           informe de equipo (registro de métricas)
 scouting/server.py         servidor HTTP + API JSON
