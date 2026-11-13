@@ -3,8 +3,9 @@ import json
 import time
 from collections import defaultdict
 
+from . import stats as stats_mod
 from . import summary
-from .db import now
+from .db import kv_get, kv_set, now
 from .ids import steam_profile_url
 
 STATUSES = ["pendiente", "en seguimiento", "contactado", "en prueba", "fichado", "descartado"]
@@ -152,6 +153,7 @@ def duos(con, client, player_id, days=30, max_age_s=12 * 3600):
             mates = client.mate_stats(aid, min_ts, same_party=True)
             try:
                 hist = client.match_history(aid)
+                store_history(con, aid, hist)
             except Exception:  # el historial es un extra: sin él no hay winrate de dúo
                 hist = []
             data = {
@@ -220,6 +222,90 @@ def mate_names(con, client, ids):
     return out
 
 
+HISTORY_DAYS = 60
+HISTORY_TTL = 12 * 3600
+
+
+def store_history(con, aid, hist):
+    """Guarda el historial (solo partidas normales, game_mode 1, de los últimos 60 días) en player_matches."""
+    min_ts = now() - HISTORY_DAYS * 86400
+    rows = []
+    for h in hist or []:
+        if h.get("game_mode") not in (None, 1) or (h.get("start_time") or 0) < min_ts:
+            continue
+        rows.append((aid, h["match_id"], h.get("start_time"), h.get("hero_id"),
+                     1 if h.get("match_result") == h.get("player_team") else 0,
+                     h.get("player_kills"), h.get("player_deaths"), h.get("player_assists"), h.get("net_worth"),
+                     h.get("last_hits"), h.get("match_duration_s"), h.get("match_mode"), h.get("ranked_display_badge"),
+                     h.get("ranked_delta")))
+    with con:
+        con.execute("DELETE FROM player_matches WHERE account_id=? AND start_time<?", (aid, min_ts))
+        con.executemany("INSERT OR REPLACE INTO player_matches VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        kv_set(con, f"history_fetched_{aid}", now())
+    return len(rows)
+
+
+def ensure_history(con, client, aid, ttl=HISTORY_TTL):
+    last = int(kv_get(con, f"history_fetched_{aid}", 0) or 0)
+    if client is None or now() - last < ttl:
+        return False
+    store_history(con, aid, client.match_history(aid))
+    return True
+
+
+def history_features(con, player_id, ranked_only=True):
+    """Forma reciente desde player_matches: últimas 20, racha, WR semanal con banda de Wilson,
+    WR ponderado por recencia (vida media 14 días), consistencia (IQR del KDA) y badge por partida."""
+    ids = [r[0] for r in con.execute("SELECT account_id FROM accounts WHERE player_id=?", (player_id,))]
+    if not ids:
+        return None
+    q = "SELECT * FROM player_matches WHERE account_id IN (%s)" % ",".join("?" * len(ids))
+    rows = [dict(r) for r in con.execute(q + " ORDER BY start_time DESC", ids)]
+    if ranked_only and any(r["match_mode"] == 4 for r in rows):
+        rows = [r for r in rows if r["match_mode"] == 4]
+    if not rows:
+        return None
+    t_now = now()
+    last20 = [{"match_id": r["match_id"], "won": r["won"], "hero_id": r["hero_id"], "t": r["start_time"]} for r in rows[:20]]
+    streak = 0
+    for r in rows:
+        if r["won"] != rows[0]["won"]:
+            break
+        streak += 1
+    streak = streak if rows[0]["won"] else -streak
+    weeks = {}
+    for r in rows:
+        wk = (t_now - r["start_time"]) // (7 * 86400)
+        b = weeks.setdefault(wk, [0, 0])
+        b[0] += r["won"]
+        b[1] += 1
+    weekly = []
+    for wk in sorted(weeks, reverse=True):
+        w, n = weeks[wk]
+        lo, hi = stats_mod.wilson(w, n)
+        weekly.append({"t": t_now - (wk + 1) * 7 * 86400, "matches": n, "wins": w, "winrate": w / n, "lo": lo, "hi": hi})
+    num = den = 0.0
+    for r in rows:
+        wgt = 0.5 ** (((t_now - r["start_time"]) / 86400) / 14)
+        num += wgt * r["won"]
+        den += wgt
+    kdas = sorted(((r["k"] or 0) + (r["a"] or 0)) / max(r["d"] or 0, 1) for r in rows)
+    iqr = None
+    if len(kdas) >= 8:
+        q1, q3 = kdas[len(kdas) // 4], kdas[(3 * len(kdas)) // 4]
+        iqr = q3 - q1
+    badge_line = [{"t": r["start_time"], "badge": r["badge"]} for r in reversed(rows) if r["badge"]]
+    return {"matches": len(rows), "last20": last20, "streak": streak, "weekly": weekly,
+            "recency_wr": num / den if den else None, "kda_iqr": iqr, "badge_line": badge_line[-120:],
+            "ranked_only": ranked_only}
+
+
+def badge_series(con, player_id):
+    return [{"t": r[0], "badge": r[1], "flat": r[2]} for r in con.execute(
+        "SELECT b.taken_at, MAX(b.badge), MAX(b.flat_progress) FROM badge_history b JOIN accounts a ON a.account_id=b.account_id "
+        "WHERE a.player_id=? GROUP BY b.taken_at ORDER BY b.taken_at", (player_id,))]
+
+
 def profile(con, client, player_id, current_lid, with_duos=True):
     s = summary.get_one(con, player_id)
     if not s:
@@ -229,6 +315,13 @@ def profile(con, client, player_id, current_lid, with_duos=True):
         a["steam_url"] = steam_profile_url(a["account_id"])
     s["top_heroes"] = s["heroes"][:5]
     s["trends"] = trends(con, player_id, current_lid)
+    s["trends"]["badge"] = badge_series(con, player_id)
+    if client is not None:
+        try:
+            ensure_history(con, client, s["primary_account_id"])
+        except Exception as e:
+            print(f"[api] sin historial de partidas de {s['primary_account_id']}: {e}")
+    s["history"] = history_features(con, player_id)
     if with_duos and client is not None:
         try:
             s["duos"] = duos(con, client, player_id)

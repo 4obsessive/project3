@@ -19,6 +19,7 @@ import statistics
 import traceback
 
 from .. import matches as M
+from .. import stats as S
 
 METRICS = []
 SMALL_SAMPLE = 10
@@ -94,9 +95,18 @@ class ReportCtx:
         self.n = len(matches)
         self.findings = []
 
-    def finding(self, kind, text, support=None, total=None):
-        """kind: strength | weakness | pattern | improve | opportunity"""
-        self.findings.append({"kind": kind, "text": text, "support": support, "total": total})
+    def finding(self, kind, text, support=None, total=None, baseline=0.5):
+        """kind: strength | weakness | pattern | improve | opportunity
+
+        Con support/total se adjunta el intervalo de Wilson al 90 % y la fuerza de la evidencia frente a
+        `baseline` (la tasa esperada por azar): fuerte (n≥8 y límite inferior > base), moderada (n≥5) o indicio.
+        Nunca se descarta un hallazgo: se etiqueta."""
+        f = {"kind": kind, "text": text, "support": support, "total": total, "baseline": baseline,
+             "lo": None, "hi": None, "evidence": None}
+        if support is not None and total:
+            f.update(S.evidence(support, total, baseline))
+        self.findings.append(f)
+        return f
 
     @property
     def demo_n(self):

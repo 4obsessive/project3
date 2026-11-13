@@ -91,14 +91,15 @@ def carriles(ctx):
                        "columns": [{"key": "orden", "label": "Secuencia", "fmt": "lane_seq"}, {"key": "partidas", "label": "Partidas"}, {"key": "pct", "label": "%"}], "rows": rows})
     blocks.append({"type": "timeline", "title": "Línea de tiempo por partida", "n": n, "rows": timeline})
 
-    # patrones
+    # patrones (con 3 carriles, «el primero en caer» tiene una tasa base de 1/3 por azar)
+    base = 1 / max(len(lanes), 1)
     if n >= 3:
         lane, cnt = (first_lost.most_common(1) or [(None, 0)])[0]
         if lane and cnt / n >= 0.5:
-            ctx.finding("weakness", f"Pierden primero el Guardian del {ln(lane)} en {cnt} de {n} partidas.", cnt, n)
+            ctx.finding("weakness", f"Pierden primero el Guardian del {ln(lane)} en {cnt} de {n} partidas.", cnt, n, baseline=base)
         lane, cnt = (first_taken.most_common(1) or [(None, 0)])[0]
         if lane and cnt / n >= 0.5:
-            ctx.finding("pattern", f"Presionan primero el {ln(lane)}: es el primer Guardian rival que cae en {cnt} de {n} partidas.", cnt, n)
+            ctx.finding("pattern", f"Presionan primero el {ln(lane)}: es el primer Guardian rival que cae en {cnt} de {n} partidas.", cnt, n, baseline=base)
         if race["us"] / n >= 0.6:
             ctx.finding("strength", f"Tumban el primer Guardian rival antes de perder el suyo en {race['us']} de {n} partidas.", race["us"], n)
         elif race["them"] / n >= 0.6:

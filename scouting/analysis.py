@@ -1,4 +1,5 @@
 """Consultas de scouting que no son por jugador: climbers y partidas recientes de un equipo."""
+import math
 import threading
 import time
 from collections import defaultdict
@@ -14,10 +15,17 @@ def current_lid(con):
     return int(v) if v else None
 
 
-def climbers(con, days):
+def climbers(con, days, metric="rel"):
+    """Subidas, bajadas y salidas entre el snapshot más reciente y el de hace `days` días.
+
+    Por defecto se ordena por subida relativa log2(antes/ahora) (#12→#4 vale más que #900→#700);
+    metric="pos" ordena por posiciones absolutas. Además, subidas por badge (MMR) que funcionan
+    desde el segundo día y también para jugadores fuera de la leaderboard."""
     lid = current_lid(con)
-    snaps = con.execute("SELECT id, taken_at FROM lb_snapshots WHERE leaderboard_id IS ? ORDER BY taken_at", (lid,)).fetchall()
-    out = {"days": days, "leaderboard_id": lid, "snapshots": len(snaps), "climbers": [], "new": [], "warning": None}
+    snaps = con.execute("SELECT id, taken_at, n_entries FROM lb_snapshots WHERE leaderboard_id IS ? ORDER BY taken_at", (lid,)).fetchall()
+    out = {"days": days, "metric": metric, "leaderboard_id": lid, "snapshots": len(snaps), "climbers": [], "new": [],
+           "fallers": [], "dropped": [], "warning": None, "size_warning": None,
+           "badge_climbers": badge_climbers(con, days)}
     if len(snaps) < 2:
         out["warning"] = ("Aún no hay historial suficiente: la API no da el ranking pasado, así que se acumula desde la primera "
                           "descarga. Vuelve cuando haya al menos dos snapshots separados en el tiempo.")
@@ -32,6 +40,10 @@ def climbers(con, days):
         have = (latest["taken_at"] - base["taken_at"]) / 86400
         out["warning"] = f"Solo hay {have:.1f} días de historial (primer snapshot). Se compara con ese en lugar de con hace {days} días."
     out["base_taken_at"], out["latest_taken_at"] = base["taken_at"], latest["taken_at"]
+    out["base_entries"], out["latest_entries"] = base["n_entries"], latest["n_entries"]
+    if base["n_entries"] and abs(latest["n_entries"] - base["n_entries"]) / base["n_entries"] > 0.15:
+        out["size_warning"] = (f"La leaderboard ha cambiado de tamaño ({base['n_entries']} → {latest['n_entries']} entradas): "
+                               "las entradas y salidas pueden deberse a eso y no a cambios de nivel.")
 
     def ranks(sid):
         return {r[0]: r[1] for r in con.execute("SELECT player_id, MIN(rank) FROM lb_entries WHERE snapshot_id=? AND player_id IS NOT NULL GROUP BY player_id", (sid,))}
@@ -40,12 +52,47 @@ def climbers(con, days):
     names = {r[0]: r[1] for r in con.execute("SELECT id, display_name FROM players")}
     for pid, r in new.items():
         if pid in old:
+            item = {"player_id": pid, "name": names.get(pid), "from": old[pid], "to": r, "delta": old[pid] - r,
+                    "rel": math.log2(old[pid] / r) if r > 0 and old[pid] > 0 else 0.0}
             if old[pid] > r:
-                out["climbers"].append({"player_id": pid, "name": names.get(pid), "from": old[pid], "to": r, "delta": old[pid] - r})
+                out["climbers"].append(item)
+            elif old[pid] < r:
+                out["fallers"].append(item)
         else:
             out["new"].append({"player_id": pid, "name": names.get(pid), "rank": r})
-    out["climbers"].sort(key=lambda x: -x["delta"])
+    for pid, r in old.items():
+        if pid not in new:
+            out["dropped"].append({"player_id": pid, "name": names.get(pid), "from": r})
+    key = (lambda x: -x["rel"]) if metric != "pos" else (lambda x: -x["delta"])
+    out["climbers"].sort(key=key)
+    out["fallers"].sort(key=(lambda x: x["rel"]) if metric != "pos" else (lambda x: x["delta"]))
     out["new"].sort(key=lambda x: x["rank"])
+    out["dropped"].sort(key=lambda x: x["from"])
+    return out
+
+
+def badge_climbers(con, days):
+    """Subidas de progreso continuo de rango (flat_progress) por jugador en los últimos `days` días."""
+    rows = con.execute(
+        "SELECT a.player_id, b.account_id, b.taken_at, b.badge, b.flat_progress FROM badge_history b "
+        "JOIN accounts a ON a.account_id=b.account_id WHERE b.taken_at>=? ORDER BY b.taken_at",
+        (int(time.time()) - days * 86400 - 3600,)).fetchall()
+    series = defaultdict(list)
+    for r in rows:
+        if r["flat_progress"] is not None:
+            series[(r["player_id"], r["account_id"])].append((r["taken_at"], r["flat_progress"], r["badge"]))
+    best = {}
+    for (pid, aid), pts in series.items():
+        if len(pts) < 2:
+            continue
+        d = pts[-1][1] - pts[0][1]
+        if pid not in best or abs(d) > abs(best[pid]["delta"]):
+            best[pid] = {"player_id": pid, "account_id": aid, "from_badge": pts[0][2], "to_badge": pts[-1][2],
+                         "delta": d, "points": [p[1] for p in pts]}
+    names = {r[0]: r[1] for r in con.execute("SELECT id, display_name FROM players")}
+    out = sorted(best.values(), key=lambda x: -x["delta"])
+    for x in out:
+        x["name"] = names.get(x["player_id"])
     return out
 
 

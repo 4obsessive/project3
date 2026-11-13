@@ -119,6 +119,28 @@ CREATE TABLE IF NOT EXISTS match_players (
     PRIMARY KEY (match_id, player_slot)
 );
 CREATE INDEX IF NOT EXISTS ix_mp_account ON match_players(account_id);
+-- Stats de los últimos 7 días (forma reciente); se reemplazan en cada actualización
+CREATE TABLE IF NOT EXISTS hero_stats_7d (
+    account_id INTEGER NOT NULL, hero_id INTEGER NOT NULL, matches INTEGER, wins INTEGER,
+    PRIMARY KEY (account_id, hero_id)
+);
+-- Perfiles de Steam (nombre y avatar) de cualquier cuenta vista: seguidas y jugadores de partidas
+CREATE TABLE IF NOT EXISTS steam_profiles (
+    account_id INTEGER PRIMARY KEY, personaname TEXT, avatar TEXT, countrycode TEXT, fetched_at INTEGER
+);
+-- Badge/rango por actualización (una fila por cuenta y actualización)
+CREATE TABLE IF NOT EXISTS badge_history (
+    account_id INTEGER NOT NULL, taken_at INTEGER NOT NULL, badge INTEGER, flat_progress REAL,
+    PRIMARY KEY (account_id, taken_at)
+);
+-- Historial de partidas por cuenta (caché de /match-history, 60 días)
+CREATE TABLE IF NOT EXISTS player_matches (
+    account_id INTEGER NOT NULL, match_id INTEGER NOT NULL, start_time INTEGER, hero_id INTEGER, won INTEGER,
+    k INTEGER, d INTEGER, a INTEGER, net_worth INTEGER, last_hits INTEGER, duration_s INTEGER,
+    match_mode INTEGER, badge INTEGER, ranked_delta INTEGER,
+    PRIMARY KEY (account_id, match_id)
+);
+CREATE INDEX IF NOT EXISTS ix_pm_account_time ON player_matches(account_id, start_time);
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -139,6 +161,55 @@ CREATE TABLE IF NOT EXISTS demo_jobs (
 );
 """
 
+# Columnas añadidas después de la primera versión: (tabla, columna, tipo). Se añaden con ALTER TABLE
+# si faltan, así una base existente se migra sin perder datos.
+MIGRATIONS = [
+    ("hero_stats", "last_hits_per_min", "REAL"),
+    ("hero_stats", "denies_per_min", "REAL"),
+    ("hero_stats", "damage_taken_per_min", "REAL"),
+    ("hero_stats", "deaths_per_min", "REAL"),
+    ("hero_stats", "crit_shot_rate", "REAL"),
+    ("hero_stats", "mvp_rank_counts", "TEXT"),
+    ("hero_stats", "mvp_rated_matches", "INTEGER"),
+    ("demo_jobs", "raw", "TEXT"),    # resultados crudos del demo, para rehacer el resumen
+]
+
+HERO_STATS_COLS = [
+    # (columna, campo de la API)
+    ("account_id", "account_id"), ("hero_id", "hero_id"), ("matches", "matches_played"), ("wins", "wins"),
+    ("kills", "kills"), ("deaths", "deaths"), ("assists", "assists"), ("player_damage", "total_player_damage"),
+    ("damage_taken", "total_player_damage_taken"), ("boss_damage", "total_boss_damage"), ("creep_damage", "total_creep_damage"),
+    ("obj_damage_per_min", "obj_damage_per_min"), ("damage_per_min", "damage_per_min"), ("networth_per_min", "networth_per_min"),
+    ("accuracy", "accuracy"), ("time_played", "time_played"), ("last_played", "last_played"),
+    ("last_hits_per_min", "last_hits_per_min"), ("denies_per_min", "denies_per_min"),
+    ("damage_taken_per_min", "damage_taken_per_min"), ("deaths_per_min", "deaths_per_min"),
+    ("crit_shot_rate", "crit_shot_rate"), ("mvp_rank_counts", "mvp_rank_counts"), ("mvp_rated_matches", "mvp_rated_matches"),
+]
+
+
+def migrate(con):
+    for table, col, typ in MIGRATIONS:
+        have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        if col not in have:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+    con.commit()
+
+
+def insert_hero_stats(con, rows):
+    """Inserta filas de /v1/players/hero-stats (sin commit: el llamador abre la transacción)."""
+    import json as _json
+    cols = ",".join(c for c, _ in HERO_STATS_COLS)
+    q = f"INSERT OR REPLACE INTO hero_stats({cols}) VALUES({','.join('?' * len(HERO_STATS_COLS))})"
+    for r in rows:
+        vals = []
+        for c, f in HERO_STATS_COLS:
+            v = r.get(f)
+            if c == "mvp_rank_counts" and v is not None and not isinstance(v, str):
+                v = _json.dumps(v)
+            vals.append(v)
+        con.execute(q, vals)
+
+
 _local = threading.local()
 _init_lock = threading.Lock()
 _initialized = set()
@@ -154,17 +225,9 @@ def connect(path=None):
     with _init_lock:
         if path not in _initialized:
             con.executescript(SCHEMA)
-            _migrate(con)
+            migrate(con)
             _initialized.add(path)
     return con
-
-
-def _migrate(con):
-    """Columnas añadidas después de crear la tabla en BD existentes (idempotente)."""
-    cols = {r[1] for r in con.execute("PRAGMA table_info(demo_jobs)")}
-    if "raw" not in cols:
-        with con:
-            con.execute("ALTER TABLE demo_jobs ADD COLUMN raw TEXT")
 
 
 def get(path=None):

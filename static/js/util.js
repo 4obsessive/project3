@@ -116,8 +116,9 @@ export function dataTable(columns, rows, opts = {}) {
     const tbody = el('tbody');
     const limit = opts.limit || 2000;
     if (!data.length) tbody.append(el('tr', {}, el('td', { class: 'empty-row', colspan: columns.length }, opts.emptyText || 'Sin resultados')));
-    for (const r of data.slice(0, limit)) {
-      const row = el('tr', { class: opts.onRowClick ? 'clickable' : '' });
+    const animate = opts.animate && !render.done;
+    for (const [i, r] of data.slice(0, limit).entries()) {
+      const row = el('tr', { class: (opts.onRowClick ? 'clickable' : '') + (animate && i < 20 ? ' enter' : ''), style: animate && i < 20 ? { animationDelay: (i * 12) + 'ms' } : null });
       if (opts.onRowClick) row.addEventListener('click', e => { if (!e.target.closest('a, button, input, select, textarea')) opts.onRowClick(r); });
       for (const c of columns) {
         let v = c.render ? c.render(r) : formatValue(r[c.key], c.fmt);
@@ -129,6 +130,7 @@ export function dataTable(columns, rows, opts = {}) {
       tbody.append(row);
     }
     table.append(tbody);
+    render.done = true;
     wrap.classList.toggle('scroll', !opts.maxHeight && data.length > 25);
     if (data.length > limit) { more = el('div', { class: 'muted small' }, `Mostrando ${limit} de ${data.length}`); wrap.append(more); }
   }

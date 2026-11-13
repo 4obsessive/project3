@@ -221,7 +221,8 @@ function resumen(root, m, tname, ctx) {
   const maxNW = Math.max(...m.players.map(p => p.net_worth || 0), 1);
   const maxKA = Math.max(...m.players.map(p => p.kills + p.deaths + p.assists), 1);
   const maxDmg = Math.max(...m.players.map(p => p.player_damage || 0), 1);
-  const who = p => p.player_id ? el('button', { type: 'button', class: 'linkbtn', onclick: () => openProfile(p.player_id, ctx) }, pname(p)) : el('span', { class: 'muted' }, pname(p));
+  const av = p => p.avatar ? el('img', { class: 'avatar-img', src: p.avatar, alt: '', loading: 'lazy', style: { width: '20px', height: '20px', marginRight: '6px', verticalAlign: 'middle' } }) : null;
+  const who = p => p.player_id ? el('button', { type: 'button', class: 'linkbtn', onclick: () => openProfile(p.player_id, ctx) }, av(p), pname(p)) : el('span', { class: 'muted' }, av(p), pname(p));
   if (mvp) root.append(el('div', { class: 'mvp' }, el('span', { class: 'mvp-badge' }, icon('star'), 'MVP'),
     el('div', {}, portrait(mvp, { size: 'sm', shape: 'round' }), ' ', el('b', { class: 'mvp-hero' }, mvp.hero), ' · ', who(mvp), ' · ', el('span', { class: `tag t${mvp.team}` }, tname(mvp.team))),
     el('div', { class: 'mvp-stats' }, `${mvp.kills}/${mvp.deaths}/${mvp.assists}`, el('span', { class: 'muted' }, ` · ${fmt.int(mvp.net_worth)} oro`),
