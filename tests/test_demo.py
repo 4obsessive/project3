@@ -97,10 +97,6 @@ class Summarize(unittest.TestCase):
         self.assertEqual(json.loads(json.dumps(self.s)), self.s)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 # ---------------------------------------------------------------- cola y trabajador
 import io
 import tempfile
@@ -128,6 +124,10 @@ class _Resp:
         return False
 
 
+def _http_error(url, code, body):
+    return urllib.error.HTTPError(url, code, "x", {}, io.BytesIO(body))
+
+
 class FakeOpener:
     """Responde por URL; guarda cada petición (método, URL, cabeceras, cuerpo)."""
 
@@ -143,15 +143,21 @@ class FakeOpener:
         self.calls.append({"method": req.get_method(), "url": url, "headers": dict(req.header_items()), "data": req.data})
         if req.get_method() == "POST":
             if self.mode == "404":
-                raise urllib.error.HTTPError(url, 404, "nf", {}, io.BytesIO(b'{"error":"No demo available for match 1"}'))
+                raise _http_error(url, 404, b'{"error":"No demo available for match 1"}')
+            if self.mode == "404salts":
+                raise _http_error(url, 404, b'{"error":"Failed to fetch match salts for match 1"}')
+            if self.mode == "404other":
+                raise _http_error(url, 404, b'{"error":"otra cosa"}')
             if self.mode == "429":
-                raise urllib.error.HTTPError(url, 429, "slow", {}, io.BytesIO(b"{}"))
+                raise _http_error(url, 429, b"{}")
             body = json.loads(req.data)
             name = next(k for k, q in demo.QUERIES.items() if q == body["query"])
             self.jobs["j" + name] = name
             return _Resp({"job_id": "j" + name, "status": "queued"})
         if url.startswith("https://api.deadlock-api.com/v1/matches/demo/query/"):
             job = url.rsplit("/", 1)[1]
+            if self.mode == "404poll":
+                raise _http_error(url, 404, b'{"error":"No demo available for match 1"}')
             return _Resp({"status": "done", "result_url": self.result_url or f"{RESULT_HOST}{job}.ndjson.zst"})
         if url.startswith(RESULT_HOST):
             job = url.rsplit("/", 1)[1].split(".")[0]
@@ -209,6 +215,48 @@ class Worker(unittest.TestCase):
         n = len(self.op.calls)
         self.assertFalse(w.step())
         self.assertEqual(len(self.op.calls), n)
+
+    def test_404_salts_is_nodemo(self):
+        w = self.mk("404salts")
+        demo.enqueue(self.con, 7)
+        w.step()
+        self.assertEqual(demo.summary(self.con, 7)["state"], "nodemo")
+
+    def test_404_other_message_retries(self):
+        w = self.mk("404other")
+        demo.enqueue(self.con, 7)
+        w.step()
+        r = self.con.execute("SELECT state, attempts FROM demo_jobs").fetchone()
+        self.assertEqual((r["state"], r["attempts"]), ("pending", 1))
+
+    def test_404_on_poll_retries_not_nodemo(self):
+        w = self.mk("404poll")
+        demo.enqueue(self.con, 7)
+        w.step()
+        r = self.con.execute("SELECT state, attempts FROM demo_jobs").fetchone()
+        self.assertEqual((r["state"], r["attempts"]), ("pending", 1))
+
+    def test_error_sets_next_try_and_future_rows_skipped(self):
+        w = self.mk("404other")
+        demo.enqueue(self.con, 7)
+        t = self.t[0]
+        w.step()
+        self.assertEqual(self.con.execute("SELECT next_try FROM demo_jobs").fetchone()[0], int(t + 600))
+        n = len(self.op.calls)
+        self.assertFalse(w.step())
+        self.assertEqual(len(self.op.calls), n)
+        self.t[0] += 601
+        self.assertTrue(w.step())
+        self.assertEqual(self.con.execute("SELECT next_try FROM demo_jobs").fetchone()[0], int(self.t[0] + 1200))
+
+    def test_budget_and_pause_persist_across_restart(self):
+        w = self.mk("429")
+        demo.enqueue(self.con, 7)
+        w.step()  # 1 POST + 429 -> pausa
+        w2 = self.mk()
+        self.assertEqual(w2.client.posts_last_hour(), 1)
+        self.assertFalse(w2.step())  # sigue en pausa
+        self.assertEqual(self.op.calls, [])
 
     def test_429_waits_and_keeps_pending(self):
         w = self.mk("429")
@@ -272,3 +320,7 @@ class Unavailable(unittest.TestCase):
             demo.AVAILABLE = old
         self.assertEqual(s["state"], "unavailable")
         self.assertIn("Python 3.14", s["reason"])
+
+
+if __name__ == "__main__":
+    unittest.main()

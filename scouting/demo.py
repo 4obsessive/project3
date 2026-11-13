@@ -7,7 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import api, matches
+from . import api, db, matches
 from .db import now as _db_now
 
 try:
@@ -182,6 +182,10 @@ QUERY_HOST = "api.deadlock-api.com"
 RESULT_HOST = "demo-extracts.deadlock-api.com"
 QUERY_URL = f"https://{QUERY_HOST}/v1/matches/demo/query"
 MAX_RESULT = 20 * 1024 * 1024
+MAX_DECOMPRESSED = 100 * 1024 * 1024
+NODEMO_MARKERS = ("No demo available", "Failed to fetch match salts")
+KV_POSTS = "demo_post_times"
+KV_PAUSE = "demo_pause_until"
 POLL_EVERY_S = 3
 POLL_MAX_S = 120
 BUDGET_WINDOW_S = 3600
@@ -209,8 +213,12 @@ class _HostRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         u = urllib.parse.urlsplit(newurl)
         if u.scheme != "https" or u.hostname not in (QUERY_HOST, RESULT_HOST):
-            raise urllib.error.HTTPError(newurl, code, f"Redirección a host no permitido: {u.hostname}", headers, fp)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+            fp.close()
+            raise urllib.error.HTTPError(newurl, code, f"Redirección a host no permitido: {u.hostname}", headers, None)
+        nueva = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if nueva is not None and u.hostname != QUERY_HOST:
+            nueva.remove_header("X-api-key")  # la clave solo viaja a la API de consultas
+        return nueva
 
 
 class DemoClient:
@@ -229,6 +237,7 @@ class DemoClient:
         return len(self.post_times)
 
     def _request(self, url, body=None):
+        """GET, o POST si hay `body`. Solo un 404 del POST con el mensaje conocido significa «sin demo»."""
         u = urllib.parse.urlsplit(url)
         if u.scheme != "https" or u.hostname not in (QUERY_HOST, RESULT_HOST):
             raise DemoFatal(f"host no permitido: {u.hostname}")
@@ -245,11 +254,16 @@ class DemoClient:
             with self.opener.open(req, timeout=60) as r:
                 raw = r.read(MAX_RESULT + 1)
         except urllib.error.HTTPError as e:
+            try:
+                msg = e.read(300).decode("utf-8", "replace")
+            except Exception:
+                msg = ""
+            finally:
+                e.close()
             if e.code == 429:
                 raise RateLimited()
-            if e.code == 404:
+            if e.code == 404 and body is not None and any(m in msg for m in NODEMO_MARKERS):
                 raise NoDemo()
-            msg = e.read()[:300].decode("utf-8", "replace") if hasattr(e, "read") else ""
             raise DemoError(f"HTTP {e.code}: {msg}")
         if len(raw) > MAX_RESULT:
             raise DemoFatal("respuesta demasiado grande")
@@ -287,7 +301,11 @@ class DemoClient:
         if zstd is None:
             raise DemoFatal(UNAVAILABLE_REASON)
         try:
-            texto = zstd.decompress(raw).decode("utf-8")
+            dec = zstd.ZstdDecompressor()
+            crudo = dec.decompress(raw, max_length=MAX_DECOMPRESSED + 1)
+            if len(crudo) > MAX_DECOMPRESSED:
+                raise DemoError("resultado descomprimido demasiado grande")
+            texto = crudo.decode("utf-8")
             return [json.loads(l) for l in texto.splitlines() if l.strip()]
         except (ValueError, zstd.ZstdError) as e:
             raise DemoError(f"resultado ilegible: {e}")
@@ -334,8 +352,25 @@ class Worker:
         self.client = client
         self.budget = budget_per_hour
         self._pausa_hasta = 0
+        self._cargar()
         self._stop = threading.Event()
         self._thread = None
+
+    def _cargar(self):
+        """Recupera de la BD los POST de la última hora y la pausa por 429 (sobreviven a reinicios)."""
+        try:
+            con = self.con_factory()
+            ts = json.loads(db.kv_get(con, KV_POSTS) or "[]")
+            self.client.post_times.extend(float(t) for t in ts)
+            self._pausa_hasta = float(db.kv_get(con, KV_PAUSE) or 0)
+        except Exception as e:
+            print(f"[demo] no se pudo cargar el presupuesto: {e}")
+
+    def _guardar(self, con):
+        self.client.posts_last_hour()
+        with con:
+            db.kv_set(con, KV_POSTS, json.dumps(self.client.post_times))
+            db.kv_set(con, KV_PAUSE, self._pausa_hasta)
 
     def step(self):
         """Procesa una partida. False si no hay nada pendiente o no hay presupuesto."""
@@ -348,6 +383,12 @@ class Worker:
         if fila is None:
             return False
         mid, intentos = fila["match_id"], fila["attempts"]
+        try:
+            return self._procesar(con, t, mid, intentos)
+        finally:
+            self._guardar(con)
+
+    def _procesar(self, con, t, mid, intentos):
         try:
             res = self.client.run_queries(mid)
             self._marcar(con, mid, "done", summary=json.dumps(summarize(res), separators=(",", ":")), error=None)
@@ -404,7 +445,6 @@ def install(con, api_key="", start_worker=True):
                     "SELECT match_id, 'pending', ? FROM matches", (_db_now(),))
     if not (AVAILABLE and start_worker):
         return None
-    from . import db
     w = Worker(db.get, DemoClient(api_key=api_key))
     w.start()
     return w
