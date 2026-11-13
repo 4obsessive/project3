@@ -1090,7 +1090,7 @@ nav.toc { display: block; overflow: visible; width: auto; }
 .hero-stack > * + * { margin-left: -6px; }
 .hero-stack .portrait, .hero-stack .avatar { box-shadow: 0 0 0 2px var(--panel); }
 .heroes-cell { display: inline-flex; align-items: center; gap: 6px; }
-.heroes-txt { white-space: normal; }
+.heroes-txt { white-space: normal; min-width: 14ch; }
 .cell-bar { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; min-width: 90px; width: 100%; }
 .cell-bar-track { flex: 1; min-width: 36px; max-width: 80px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .cell-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
