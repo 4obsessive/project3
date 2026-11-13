@@ -182,6 +182,33 @@ class SideAndReport(unittest.TestCase):
         koth = next(s for s in out["sections"] if s["id"] == "koth")
         self.assertTrue(any(b["type"] == "unavailable" for b in koth["blocks"]))
 
+    def test_zone_tables_have_maps(self):
+        out = report.run("Prueba", [self.data], self.team1)
+        mapa = next(s for s in out["sections"] if s["id"] == "mapa")
+        titles = ("Zonas con más muertes", "Zonas con más kills", "Dónde ganan y pierden enfrentamientos")
+        seen = 0
+        for t in titles:
+            tab = next((b for b in mapa["blocks"] if b["type"] == "table" and b["title"] == t), None)
+            if tab is None:
+                continue
+            seen += 1
+            mp = tab["map"]
+            self.assertEqual(mp["grid"], 8)
+            layer = mp["layers"][0]
+            self.assertEqual(layer["kind"], "highlight")
+            self.assertEqual([c[2] for c in layer["cells"]], [r["zona"] for r in tab["rows"]])
+            for col, row, label in (c[:3] for c in layer["cells"]):
+                self.assertEqual(label, "ABCDEFGH"[col] + str(row + 1))
+            if t == titles[0]:
+                self.assertEqual(layer["side"], "them")
+            if t == titles[1]:
+                self.assertEqual(layer["side"], "us")
+            if t == titles[2]:
+                for (col, row, label, side), r in zip(layer["cells"], tab["rows"]):
+                    self.assertEqual(side, "us" if r["balance"] > 0 else "them" if r["balance"] < 0 else "neutral")
+        self.assertGreaterEqual(seen, 2)
+        json.dumps(out)
+
     def test_report_has_no_interpretation(self):
         out = report.run("Prueba", [self.data], self.team1)
         for s in out["sections"]:

@@ -45,25 +45,35 @@ def mapa(ctx):
          "layers": [{"kind": "cells", "name": "Balance", "cells": balance, "diverging": True, "labels": True}]},
     ]
 
-    def top(counter, matches_by_cell, label):
-        rows = []
+    def zone_map(cells_list, side, name):
+        """Mapa que acompaña a una tabla: resalta las celdas de sus filas, en el mismo orden. Celda = [col, fila, zona(, lado)]."""
+        return {"grid": GRID, "normalized": normalize,
+                "layers": [{"kind": "highlight", "name": name, "side": side, "cells": cells_list}]}
+
+    def top(counter, matches_by_cell, label, side):
+        rows, hl = [], []
         for c, v in sorted(counter.items(), key=lambda kv: -kv[1])[:6]:
             rows.append({"zona": cell_name(c), "eventos": v, "partidas": len(matches_by_cell[c]),
                          "pct": round(100 * len(matches_by_cell[c]) / ctx.n)})
+            hl.append([c[0], c[1], cell_name(c)])
         return {"type": "table", "title": label, "n": ctx.n, "note": "Zonas = celdas de la cuadrícula dibujada sobre el mapa.",
+                "map": zone_map(hl, side, label),
                 "columns": [{"key": "zona", "label": "Zona (ver mapa)"}, {"key": "eventos", "label": "Total"},
                             {"key": "partidas", "label": "Partidas en que ocurre"}, {"key": "pct", "label": "% partidas"}],
                 "rows": rows}
 
-    blocks.append(top(cell_d, match_d, "Zonas con más muertes"))
-    blocks.append(top(cell_k, match_k, "Zonas con más kills"))
-    bal_rows = sorted(({"zona": cell_name(c), "kills": cell_k[c], "muertes": cell_d[c], "balance": cell_k[c] - cell_d[c]} for c in cells),
+    blocks.append(top(cell_d, match_d, "Zonas con más muertes", "them"))
+    blocks.append(top(cell_k, match_k, "Zonas con más kills", "us"))
+    bal_rows = sorted(({"zona": cell_name(c), "kills": cell_k[c], "muertes": cell_d[c], "balance": cell_k[c] - cell_d[c], "_c": c} for c in cells),
                       key=lambda r: r["balance"])
     if bal_rows:
+        shown = bal_rows[:4] + [r for r in bal_rows[-4:][::-1] if r not in bal_rows[:4]]
+        hl = [[r["_c"][0], r["_c"][1], r["zona"], "us" if r["balance"] > 0 else "them" if r["balance"] < 0 else "neutral"] for r in shown]
         blocks.append({"type": "table", "title": "Dónde ganan y pierden enfrentamientos", "n": ctx.n,
                        "columns": [{"key": "zona", "label": "Zona (ver mapa)"}, {"key": "kills", "label": "Kills"},
                                    {"key": "muertes", "label": "Muertes"}, {"key": "balance", "label": "Balance"}],
-                       "rows": bal_rows[:4] + [r for r in bal_rows[-4:][::-1] if r not in bal_rows[:4]]})
+                       "map": zone_map(hl, "us", "Balance por zona"),
+                       "rows": [{k: v for k, v in r.items() if k != "_c"} for r in shown]})
     # patrones: zonas donde mueren en al menos la mitad de las partidas y con balance negativo
     if normalize and ctx.n >= 3:
         # solo las 3 zonas más marcadas de cada tipo, para no llenar las conclusiones de ruido

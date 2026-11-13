@@ -26,7 +26,30 @@ function laneSeqCell(seq) {
 const laneCol = c => c.fmt === 'lane' ? { render: r => laneChip(r.carril_id, LANES) }
   : c.fmt === 'lane_seq' ? { render: r => laneSeqCell(r[c.key]), sort: r => laneSeqText(r[c.key]), sortable: false } : {};
 
-const TONE = { confirmed: 'confirmado', warning: 'aviso', info: 'nota' };
+// Mapa al lado de una tabla (zonas resaltadas). Si no se puede crear, la tabla sigue sola.
+function zoneMap(b) {
+  try {
+    const box = el('div', { class: 'table-map-map' });
+    const layers = b.map.layers.map(L => ({ ...L, color: (L.side && SIDE_COLORS[L.side]) || SIDE_COLORS.neutral }));
+    const leg = [];
+    for (const L of layers) {
+      const sides = new Set(L.cells.map(c => c[3] || L.side));
+      if (sides.size <= 1) leg.push([L.color, L.name || 'Zonas de la tabla']);
+      else {
+        if (sides.has('us')) leg.push([SIDE_COLORS.us, 'balance positivo']);
+        if (sides.has('them')) leg.push([SIDE_COLORS.them, 'balance negativo']);
+        if (sides.has('neutral')) leg.push([SIDE_COLORS.neutral, 'balance 0']);
+      }
+    }
+    box.append(legend(leg));
+    const map = new MapView(box, { size: 480, grid: b.map.grid || 0, label: `Mapa: ${b.title}` });
+    map.setLayers(layers);
+    if (b.map.normalized) box.append(el('div', { class: 'muted small' }, 'Normalizado: base propia siempre abajo.'));
+    return box;
+  } catch (e) { return null; }
+}
+
+const TONE ={ confirmed: 'confirmado', warning: 'aviso', info: 'nota' };
 
 export function renderBlock(b) {
   const title = (t, n) => t ? el('div', { class: 'chart-title' }, el('b', {}, t), n != null ? el('span', { class: 'n-badge' }, `n = ${n} partidas`) : null) : null;
@@ -35,9 +58,13 @@ export function renderBlock(b) {
       return el('div', { class: `note ${b.tone || 'info'} block` }, el('span', { class: 'lbl' }, TONE[b.tone] || ''), b.text);
     case 'unavailable':
       return el('div', { class: 'unavailable block' }, el('b', {}, `No disponible — ${b.title}: `), b.reason);
-    case 'table':
-      return el('div', { class: 'block' }, title(b.title, b.n), b.note ? el('div', { class: 'muted small' }, b.note) : null,
-        dataTable(b.columns.map(c => ({ key: c.key, label: c.label, fmt: c.fmt, wrap: c.key === 'texto', ...laneCol(c) })), b.rows, { label: b.title, emptyText: 'Sin datos' }));
+    case 'table': {
+      const tbl = dataTable(b.columns.map(c => ({ key: c.key, label: c.label, fmt: c.fmt, wrap: c.key === 'texto', ...laneCol(c) })), b.rows, { label: b.title, emptyText: 'Sin datos' });
+      const head = [title(b.title, b.n), b.note ? el('div', { class: 'muted small' }, b.note) : null];
+      const side = b.map && b.rows.length ? zoneMap(b) : null;
+      if (!side) return el('div', { class: 'block' }, head, tbl);
+      return el('div', { class: 'block' }, head, el('div', { class: 'table-map' }, el('div', { class: 'table-map-tbl' }, tbl), side));
+    }
     case 'bars':
       return el('div', { class: 'block' }, title(b.title, b.n), bars({ labels: b.labels, series: b.series, unit: b.unit || '', label: b.title,
         labelColor: b.lane_ids ? (lab, i) => laneStyle(b.lane_ids[i], LANES).color : null }));

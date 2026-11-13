@@ -158,6 +158,10 @@ svg text.direct { font-weight: 600; }
 .n-badge { font-size: var(--fs-xs); color: var(--muted); margin-left: 6px; font-weight: 400; }
 
 /* mapa */
+.table-map { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 360px); gap: 16px; align-items: start; }
+.table-map-tbl { min-width: 0; overflow-x: auto; }
+.table-map-map { min-width: 0; }
+@media (max-width: 700px) { .table-map { grid-template-columns: minmax(0, 1fr); } }
 .mapbox { position: relative; display: inline-block; max-width: 100%; }
 .mapbox canvas { max-width: 100%; height: auto; border-radius: 6px; background: var(--mapbg); display: block; }
 .map-msg { position: absolute; top: 8px; left: 8px; right: 8px; background: rgba(0,0,0,.7); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: var(--fs-xs); }

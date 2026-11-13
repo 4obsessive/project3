@@ -1,5 +1,5 @@
 // Módulo ÚNICO de mapa: minimapa, partidas e informe usan este mismo render.
-// Capas: heat (calor), points (●), crosses (✕), cells (cuadrícula con valor), paths (recorridos), markers, images.
+// Capas: heat (calor), points (●), crosses (✕), cells (cuadrícula con valor), paths (recorridos), markers, images, highlight (zonas señaladas).
 import { api } from './api.js';
 import { el, downloadBlob, cssVar } from './util.js';
 import { SIDE_COLORS } from './charts.js';
@@ -88,7 +88,7 @@ export class MapView {
     if (this.grid) this.drawGrid(ctx);
     for (const L of this.layers) {
       if (L.hidden) continue;
-      const fn = { heat: this.drawHeat, points: this.drawPoints, crosses: this.drawCrosses, cells: this.drawCells, paths: this.drawPaths, markers: this.drawMarkers, images: this.drawImages }[L.kind];
+      const fn = { heat: this.drawHeat, points: this.drawPoints, crosses: this.drawCrosses, cells: this.drawCells, paths: this.drawPaths, markers: this.drawMarkers, images: this.drawImages, highlight: this.drawHighlight }[L.kind];
       if (fn) fn.call(this, ctx, L);
     }
   }
@@ -250,6 +250,27 @@ export class MapView {
         ctx.fillStyle = ink();
         ctx.fillText((L.diverging && v > 0 ? '+' : '') + v, col * step + step / 2, row * step + step / 2);
       }
+    }
+    ctx.restore();
+  }
+
+  // zonas señaladas: [col, fila, etiqueta(, lado)] con borde grueso y la etiqueta (A3); el lado de la celda manda sobre el de la capa
+  drawHighlight(ctx, L) {
+    const S = this.size, g = this.grid || 8, step = S / g;
+    ctx.save();
+    ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 4;
+    for (const [cx, cy, label, side] of L.cells) {
+      let col = cx, row = cy;
+      if (this.rotate) { col = g - 1 - cx; row = g - 1 - cy; }
+      const color = COLORS[side] || L.color || COLORS.neutral;
+      ctx.fillStyle = hexA(color, 0.18);
+      ctx.fillRect(col * step, row * step, step, step);
+      ctx.strokeStyle = color;
+      ctx.strokeRect(col * step + 2, row * step + 2, step - 4, step - 4);
+      const x = col * step + step / 2, y = row * step + step / 2;
+      ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 3; ctx.strokeText(label || '', x, y);
+      ctx.fillStyle = ink(); ctx.fillText(label || '', x, y);
+      ctx.lineWidth = 4;
     }
     ctx.restore();
   }
