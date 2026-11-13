@@ -14,7 +14,7 @@ import webbrowser
 if sys.version_info < (3, 9):
     sys.exit("Hace falta Python 3.9 o superior.")
 
-from scouting import api, config, db, matches, minimap, summary, updater
+from scouting import api, config, db, demo, matches, minimap, summary, updater
 
 
 def main():
@@ -76,6 +76,8 @@ def main():
         sys.exit(f"No se pudo abrir el puerto {port}: {e}. ¿Ya está arrancado? Prueba con --puerto 8001")
 
     stop = threading.Event()
+    # El demo (Midboss/KOTH) sigue su propia cola y presupuesto: no depende de --sin-actualizar.
+    demo.install(con, cfg.get("api_key"))
     if not args.sin_actualizar:
         threading.Thread(target=upd.scheduler, args=(stop,), daemon=True, name="planificador").start()
     url = f"http://127.0.0.1:{port}"

@@ -12,7 +12,7 @@ import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import analysis, config, db, images, matches, minimap, players, report, summary, updater as updater_mod
+from . import analysis, config, db, demo, images, matches, minimap, players, report, summary, updater as updater_mod
 from .api import ApiError
 from .db import kv_get
 from .ids import to_account_id
@@ -89,6 +89,7 @@ class App:
         self._calib_lock = threading.Lock()
         r = self.route
         r("GET", r"/api/status", self.status)
+        r("GET", r"/api/demo/status", self.demo_status)
         r("GET", r"/api/players", self.players_all)
         r("GET", r"/api/players/(\d+)", self.player_profile)
         r("POST", r"/api/players/(\d+)/manual", self.player_manual)
@@ -141,6 +142,9 @@ class App:
         s["season_names"] = json.loads(kv_get(con, "season_names") or "{}")
         s["region"] = config.load()["region"]
         return s
+
+    def demo_status(self, req):
+        return demo.counts(self.con())
 
     def update_now(self, req):
         started = self.updater.start("manual (botón)")
@@ -330,6 +334,7 @@ class App:
             r = con.execute("SELECT p.id, COALESCE(p.display_name, a.steam_name) n FROM accounts a JOIN players p ON p.id=a.player_id WHERE a.account_id=?", (p["account_id"],)).fetchone()
             p["player_id"], p["name"] = (r["id"], r["n"]) if r else (None, None)
             names[p["slot"]] = p["name"]
+        out["demo"] = demo.summary(con, int(mid))
         return out
 
     def match_positions(self, req, mid):

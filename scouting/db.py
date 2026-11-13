@@ -126,6 +126,16 @@ CREATE TABLE IF NOT EXISTS jobs (
     step TEXT, progress TEXT, message TEXT,
     started_at INTEGER, finished_at INTEGER
 );
+
+-- Cola del demo (Midboss/KOTH): una fila por partida
+CREATE TABLE IF NOT EXISTS demo_jobs (
+    match_id INTEGER PRIMARY KEY,
+    state TEXT NOT NULL,             -- pending | done | nodemo | error
+    summary TEXT, error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_try INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER
+);
 """
 
 _local = threading.local()

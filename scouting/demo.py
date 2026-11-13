@@ -1,5 +1,22 @@
 """Demo: resumen de Midboss, rejuvenators y KOTH a partir de las consultas SQL del demo (parte pura, sin red)."""
 import bisect
+import json
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from . import api, matches
+from .db import now as _db_now
+
+try:
+    from compression import zstd
+    AVAILABLE = True
+except ImportError:  # Python < 3.14
+    zstd = None
+    AVAILABLE = False
+UNAVAILABLE_REASON = "no disponible: requiere Python 3.14+"
 
 TICK_RATE = 64
 # El demo numera los equipos 2 y 3; la API de partidas usa 0 y 1.
@@ -158,3 +175,236 @@ def summarize(results):
     """Resume los resultados de las consultas del demo en un dict serializable a JSON."""
     rules = sorted(results.get("rules") or [], key=lambda r: r["tick"])
     return {"version": SUMMARY_VERSION, "midboss": _midboss(results, rules), "koth": _koth(rules)}
+
+
+# ------------------------------------------------------------------ red
+QUERY_HOST = "api.deadlock-api.com"
+RESULT_HOST = "demo-extracts.deadlock-api.com"
+QUERY_URL = f"https://{QUERY_HOST}/v1/matches/demo/query"
+MAX_RESULT = 20 * 1024 * 1024
+POLL_EVERY_S = 3
+POLL_MAX_S = 120
+BUDGET_WINDOW_S = 3600
+RATE_LIMIT_WAIT_S = 61
+MAX_ATTEMPTS = 5
+
+
+class DemoError(Exception):
+    """Fallo reintentable."""
+
+
+class DemoFatal(DemoError):
+    """Fallo que no se reintenta (respuesta que no debemos aceptar)."""
+
+
+class NoDemo(Exception):
+    """La API no tiene el demo de la partida."""
+
+
+class RateLimited(Exception):
+    """HTTP 429."""
+
+
+class _HostRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        u = urllib.parse.urlsplit(newurl)
+        if u.scheme != "https" or u.hostname not in (QUERY_HOST, RESULT_HOST):
+            raise urllib.error.HTTPError(newurl, code, f"Redirección a host no permitido: {u.hostname}", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class DemoClient:
+    """Cliente de las consultas SQL del demo. `opener` debe tener `.open(req, timeout=)`."""
+
+    def __init__(self, opener=None, now=time.time, sleep=time.sleep, api_key=""):
+        self.opener = opener or urllib.request.build_opener(_HostRedirect)
+        self.now = now
+        self.sleep = sleep
+        self.api_key = api_key or ""
+        self.post_times = []  # instantes de los POST (ventana deslizante del presupuesto)
+
+    def posts_last_hour(self):
+        corte = self.now() - BUDGET_WINDOW_S
+        self.post_times[:] = [t for t in self.post_times if t > corte]
+        return len(self.post_times)
+
+    def _request(self, url, body=None):
+        u = urllib.parse.urlsplit(url)
+        if u.scheme != "https" or u.hostname not in (QUERY_HOST, RESULT_HOST):
+            raise DemoFatal(f"host no permitido: {u.hostname}")
+        headers = {"User-Agent": api.USER_AGENT}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        if self.api_key and u.hostname == QUERY_HOST:
+            headers["X-API-KEY"] = self.api_key  # misma cabecera que scouting.api.Client
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST" if body is not None else "GET")
+        if body is not None:
+            self.post_times.append(self.now())
+        try:
+            with self.opener.open(req, timeout=60) as r:
+                raw = r.read(MAX_RESULT + 1)
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                raise RateLimited()
+            if e.code == 404:
+                raise NoDemo()
+            msg = e.read()[:300].decode("utf-8", "replace") if hasattr(e, "read") else ""
+            raise DemoError(f"HTTP {e.code}: {msg}")
+        if len(raw) > MAX_RESULT:
+            raise DemoFatal("respuesta demasiado grande")
+        return raw
+
+    def run_queries(self, match_id):
+        """Lanza las 3 consultas del demo y devuelve `results` (formato del fixture)."""
+        results = {"match_id": int(match_id)}
+        for nombre, sql in QUERIES.items():
+            job = json.loads(self._request(QUERY_URL, {"match_id": int(match_id), "query": sql, "format": "ndjson"}))
+            job_id = job.get("job_id")
+            if not job_id:
+                raise DemoError("la API no devolvió job_id")
+            results[nombre] = self._esperar(job_id)
+        return results
+
+    def _esperar(self, job_id):
+        url = f"{QUERY_URL}/{urllib.parse.quote(str(job_id), safe='')}"
+        for _ in range(POLL_MAX_S // POLL_EVERY_S):
+            st = json.loads(self._request(url))
+            estado = st.get("status")
+            if estado == "done":
+                ru = st.get("result_url") or ""
+                u = urllib.parse.urlsplit(ru)
+                if u.scheme != "https" or u.hostname != RESULT_HOST:
+                    raise DemoFatal(f"result_url de un host no permitido: {u.hostname}")
+                return self._parse(self._request(ru))
+            if estado == "failed":
+                raise DemoError(f"consulta fallida: {st.get('error')}")
+            self.sleep(POLL_EVERY_S)
+        raise DemoError("tiempo de espera agotado")
+
+    @staticmethod
+    def _parse(raw):
+        if zstd is None:
+            raise DemoFatal(UNAVAILABLE_REASON)
+        try:
+            texto = zstd.decompress(raw).decode("utf-8")
+            return [json.loads(l) for l in texto.splitlines() if l.strip()]
+        except (ValueError, zstd.ZstdError) as e:
+            raise DemoError(f"resultado ilegible: {e}")
+
+
+# ------------------------------------------------------------------ cola
+def enqueue(con, match_id):
+    """Encola una partida como `pending` si aún no tiene fila (no toca done/nodemo)."""
+    with con:
+        con.execute("INSERT OR IGNORE INTO demo_jobs(match_id, state, updated_at) VALUES(?, 'pending', ?)",
+                    (int(match_id), _db_now()))
+
+
+def summary(con, match_id):
+    """Estado del demo de una partida: resumen si está listo; si no, estado y motivo."""
+    if not AVAILABLE:
+        return {"state": "unavailable", "reason": UNAVAILABLE_REASON}
+    r = con.execute("SELECT state, summary, error FROM demo_jobs WHERE match_id=?", (int(match_id),)).fetchone()
+    if r is None:
+        return {"state": "pending", "reason": "aún sin consultar"}
+    if r["state"] == "done" and r["summary"]:
+        return {"state": "done", **json.loads(r["summary"])}
+    if r["state"] == "nodemo":
+        return {"state": "nodemo", "reason": "la API no tiene el demo de esta partida"}
+    if r["state"] == "error":
+        return {"state": "error", "reason": r["error"] or "error al consultar el demo"}
+    return {"state": "pending", "reason": "en cola"}
+
+
+def counts(con):
+    """Recuento de partidas por estado."""
+    out = {"pending": 0, "done": 0, "nodemo": 0, "error": 0}
+    for r in con.execute("SELECT state, COUNT(*) n FROM demo_jobs GROUP BY state"):
+        out[r["state"]] = r["n"]
+    out["available"] = AVAILABLE
+    return out
+
+
+class Worker:
+    """Procesa la cola de a una partida, respetando un presupuesto de POST por hora."""
+
+    def __init__(self, con_factory, client, budget_per_hour=150):
+        self.con_factory = con_factory
+        self.client = client
+        self.budget = budget_per_hour
+        self._pausa_hasta = 0
+        self._stop = threading.Event()
+        self._thread = None
+
+    def step(self):
+        """Procesa una partida. False si no hay nada pendiente o no hay presupuesto."""
+        t = self.client.now()
+        if t < self._pausa_hasta or self.budget - self.client.posts_last_hour() < len(QUERIES):
+            return False
+        con = self.con_factory()
+        fila = con.execute("SELECT match_id, attempts FROM demo_jobs WHERE state='pending' AND next_try<=? "
+                           "ORDER BY match_id DESC LIMIT 1", (int(t),)).fetchone()
+        if fila is None:
+            return False
+        mid, intentos = fila["match_id"], fila["attempts"]
+        try:
+            res = self.client.run_queries(mid)
+            self._marcar(con, mid, "done", summary=json.dumps(summarize(res), separators=(",", ":")), error=None)
+        except NoDemo:
+            self._marcar(con, mid, "nodemo", error=None)
+        except RateLimited:
+            self._pausa_hasta = t + RATE_LIMIT_WAIT_S
+            self._marcar(con, mid, "pending", next_try=int(t + RATE_LIMIT_WAIT_S))
+        except Exception as e:
+            intentos += 1
+            fatal = isinstance(e, DemoFatal) or intentos >= MAX_ATTEMPTS
+            print(f"[demo] partida {mid}: {e}")
+            self._marcar(con, mid, "error" if fatal else "pending", error=str(e)[:300], attempts=intentos,
+                         next_try=int(t + 600 * intentos))
+        return True
+
+    @staticmethod
+    def _marcar(con, mid, estado, **campos):
+        campos.update(state=estado, updated_at=_db_now())
+        cols = ", ".join(f"{k}=?" for k in campos)
+        with con:
+            con.execute(f"UPDATE demo_jobs SET {cols} WHERE match_id=?", (*campos.values(), mid))
+
+    def _loop(self):
+        while not self._stop.is_set():
+            try:
+                trabajo = self.step()
+            except Exception as e:
+                print(f"[demo] error del trabajador: {e}")
+                trabajo = False
+            if not trabajo:
+                self._stop.wait(5)
+
+    def start(self):
+        if self._thread is None or not self._thread.is_alive():
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._loop, daemon=True, name="demo")
+            self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+
+def enqueue_hook(con, match_id):
+    enqueue(con, match_id)
+
+
+def install(con, api_key="", start_worker=True):
+    """Registra el gancho de guardado, encola las partidas sin fila y arranca el trabajador."""
+    if enqueue_hook not in matches.ON_STORE:
+        matches.ON_STORE.append(enqueue_hook)
+    with con:
+        con.execute("INSERT OR IGNORE INTO demo_jobs(match_id, state, updated_at) "
+                    "SELECT match_id, 'pending', ? FROM matches", (_db_now(),))
+    if not (AVAILABLE and start_worker):
+        return None
+    from . import db
+    w = Worker(db.get, DemoClient(api_key=api_key))
+    w.start()
+    return w

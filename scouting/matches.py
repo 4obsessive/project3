@@ -22,6 +22,10 @@ _cache_lock = threading.Lock()
 _CACHE_MAX = 40
 
 
+# Ganchos fn(con, match_id) que se llaman al guardar una partida (p. ej. la cola del demo).
+ON_STORE = []
+
+
 class MatchError(ValueError):
     pass
 
@@ -68,6 +72,11 @@ def store(con, data, source):
         _cache.move_to_end(mid)
         while len(_cache) > _CACHE_MAX:
             _cache.popitem(last=False)
+    for fn in list(ON_STORE):
+        try:
+            fn(con, mid)
+        except Exception as e:  # un gancho nunca debe impedir guardar la partida
+            print(f"[partidas] gancho {getattr(fn, '__name__', fn)} falló para {mid}: {e}")
     return mid
 
 
