@@ -1,0 +1,202 @@
+{
+ "queries": {
+  "rejuv": "SELECT tick, killing_team, user_team FROM RejuvStatusEvent WHERE event_type = 4 ORDER BY tick",
+  "rules": "SELECT min(tick) AS tick, \"m_pGameRules__m_nKothScoringTeam\" AS koth_team, \"m_pGameRules__m_timeKothScoring\" AS koth_scoring, \"m_pGameRules__m_timeKothCashInStarted\" AS koth_start, \"m_pGameRules__m_timeKothGiveUp\" AS koth_give_up, \"m_pGameRules__m_nTotalPausedTicks\" AS paused_ticks, \"m_pGameRules__m_flGameStartTime\" AS game_start FROM CCitadelGameRulesProxy GROUP BY 2,3,4,5,6,7 ORDER BY 1",
+  "midboss": "SELECT d.entindex_victim AS victim, p.team AS team, sum(d.damage) AS dmg, min(d.tick) AS t0, max(d.tick) AS t1 FROM DamageEvent d JOIN (SELECT DISTINCT entity_index, \"m_iTeamNum\" AS team FROM CCitadelPlayerPawn WHERE \"m_iTeamNum\" IS NOT NULL) p ON d.entindex_attacker = p.entity_index WHERE d.victim_class = 8 GROUP BY 1,2 ORDER BY 4"
+ },
+ "results": {
+  "match_id": 135801973,
+  "rejuv": [
+   {
+    "tick": 78799,
+    "killing_team": 3,
+    "user_team": 3
+   },
+   {
+    "tick": 78805,
+    "killing_team": 3,
+    "user_team": 3
+   },
+   {
+    "tick": 78811,
+    "killing_team": 3,
+    "user_team": 3
+   },
+   {
+    "tick": 107263,
+    "killing_team": 3,
+    "user_team": 3
+   },
+   {
+    "tick": 107267,
+    "killing_team": 3,
+    "user_team": 3
+   },
+   {
+    "tick": 107282,
+    "killing_team": 3,
+    "user_team": 3
+   }
+  ],
+  "rules": [
+   {
+    "tick": 0,
+    "koth_team": 0,
+    "koth_scoring": 0.0,
+    "koth_start": 0.0,
+    "koth_give_up": 0.0,
+    "paused_ticks": 0,
+    "game_start": 47.546875
+   },
+   {
+    "tick": 1,
+    "koth_team": 0,
+    "koth_scoring": 0.0,
+    "koth_start": 0.0,
+    "koth_give_up": 0.0,
+    "paused_ticks": 0,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 47326,
+    "koth_team": -1,
+    "koth_scoring": 0.0,
+    "koth_start": 787.0156,
+    "koth_give_up": 3.4028235e+38,
+    "paused_ticks": 0,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 47360,
+    "koth_team": -1,
+    "koth_scoring": 0.0,
+    "koth_start": 787.5469,
+    "koth_give_up": 847.5469,
+    "paused_ticks": 0,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 48511,
+    "koth_team": 3,
+    "koth_scoring": 805.53125,
+    "koth_start": 787.5469,
+    "koth_give_up": 847.5469,
+    "paused_ticks": 0,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 48703,
+    "koth_team": 3,
+    "koth_scoring": 805.53125,
+    "koth_start": 0.0,
+    "koth_give_up": 0.0,
+    "paused_ticks": 0,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 66894,
+    "koth_team": 3,
+    "koth_scoring": 805.53125,
+    "koth_start": 0.0,
+    "koth_give_up": 0.0,
+    "paused_ticks": 1626,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 73515,
+    "koth_team": -1,
+    "koth_scoring": 0.0,
+    "koth_start": 1170.8125,
+    "koth_give_up": 3.4028235e+38,
+    "paused_ticks": 1626,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 74415,
+    "koth_team": -1,
+    "koth_scoring": 0.0,
+    "koth_start": 1184.875,
+    "koth_give_up": 1244.875,
+    "paused_ticks": 1626,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 75771,
+    "koth_team": 2,
+    "koth_scoring": 1206.0625,
+    "koth_start": 1184.875,
+    "koth_give_up": 1244.875,
+    "paused_ticks": 1626,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 76155,
+    "koth_team": 2,
+    "koth_scoring": 1206.0625,
+    "koth_start": 0.0,
+    "koth_give_up": 0.0,
+    "paused_ticks": 1626,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 103405,
+    "koth_team": -1,
+    "koth_scoring": 0.0,
+    "koth_start": 1637.8438,
+    "koth_give_up": 3.4028235e+38,
+    "paused_ticks": 1626,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 103757,
+    "koth_team": -1,
+    "koth_scoring": 0.0,
+    "koth_start": 1643.3438,
+    "koth_give_up": 1703.3438,
+    "paused_ticks": 1626,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 104193,
+    "koth_team": 2,
+    "koth_scoring": 1650.1563,
+    "koth_start": 1643.3438,
+    "koth_give_up": 1703.3438,
+    "paused_ticks": 1626,
+    "game_start": 47.5625
+   },
+   {
+    "tick": 104641,
+    "koth_team": 2,
+    "koth_scoring": 1650.1563,
+    "koth_start": 0.0,
+    "koth_give_up": 0.0,
+    "paused_ticks": 1626,
+    "game_start": 47.5625
+   }
+  ],
+  "midboss": [
+   {
+    "victim": 3198,
+    "team": 3,
+    "dmg": 15731,
+    "t0": 77467,
+    "t1": 78311
+   },
+   {
+    "victim": 3952,
+    "team": 3,
+    "dmg": 22027,
+    "t0": 106044,
+    "t1": 106774
+   },
+   {
+    "victim": 3952,
+    "team": 2,
+    "dmg": 0,
+    "t0": 106749,
+    "t1": 106749
+   }
+  ]
+ }
+}
