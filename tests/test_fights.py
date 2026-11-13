@@ -49,6 +49,10 @@ class Classify(unittest.TestCase):
         self.assertEqual(clases(mi)[1], ["rest", "midboss", "midboss", "rest"])
         self.assertEqual(clases(mi, {"state": "pending"})[1], ["rest", "midboss", "midboss", "rest"])
 
+    def test_midboss_done_demo_empty_falls_back_to_metadata(self):
+        mi = mi_con(destroyed=[1200], deaths=[(1100, 0, 0), (1150, 0, 0), (1230, 0, 0), (1300, 0, 0)])
+        self.assertEqual(clases(mi, summ())[1], ["rest", "midboss", "midboss", "rest"])
+
     def test_midboss_rejuv_only_uses_destroyed_window(self):
         s = summ(midboss=[{"n": 1, "t": 1000, "t_first": None}])
         mi = mi_con(deaths=[(940, 0, 0), (939, 0, 0)])

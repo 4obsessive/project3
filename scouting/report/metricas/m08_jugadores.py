@@ -84,7 +84,7 @@ def jugadores(ctx):
               {"type": "text", "tone": "info",
                "text": "Per-match means for each roster player (identity by linked player; otherwise by account). Laning phase = min 0–10. "
                        "Damage and ganks only average matches with demo (column «With demo»); what is missing shows as «–». "
-                       "Kills/deaths without objective fights are per-match means over the matches with demo only (see the column Matches with demo (rest)) (KOTH is not identifiable without it)."},
+                       "Kills/deaths without objective fights are per-match means over the matches with demo only (see the column Matches with demo (rest); KOTH is not identifiable without it)."},
               {"type": "table", "kind": "jugadores", "title": "Means per player", "n": ctx.n,
                "columns": [{"key": k, "label": l, **extra.get(k, {})} for k, l in cols], "rows": rows}]
     tied = _tied_max(rows, "kills")

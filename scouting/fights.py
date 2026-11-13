@@ -31,7 +31,9 @@ def _midboss_windows(mi, demo_summary):
                 continue
             ini = m["t_first"] if m.get("t_first") is not None else m["t"] - AFTER_S
             out.append((ini, m["t"] + AFTER_S))
-        return out
+        if out:
+            return out
+    # sin demo, o demo terminado sin midboss: ventanas de la metadata
     return [(m["destroyed_time_s"] - AFTER_S, m["destroyed_time_s"] + AFTER_S)
             for m in mi.get("mid_boss") or [] if m.get("destroyed_time_s") is not None]
 
