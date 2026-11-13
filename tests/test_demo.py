@@ -528,6 +528,25 @@ class Worker(unittest.TestCase):
         self.assertTrue(w.step())
         self.assertEqual(len(self._posts()), 1)
 
+    def test_saturated_budget_waits_for_pending_before_backfill(self):
+        # Ventana llena: cada POST liberado no se gasta en relleno mientras haya una partida nueva esperando 4.
+        self._hecha_sin_lineas(900)
+        demo.enqueue(self.con, 100)
+        t0 = self.t[0]
+        w = self.mk()
+        self.client.post_times[:] = [t0 - 3590, t0 - 3580, t0 - 3570, t0 - 3560] + [t0 - 10] * 146
+        self.assertFalse(w.step())
+        self.t[0] = t0 + 15  # 1 libre
+        self.assertFalse(w.step())
+        self.t[0] = t0 + 35  # 3 libres
+        self.assertFalse(w.step())
+        self.assertEqual(self._posts(), [])
+        self.t[0] = t0 + 45  # 4 libres: va primero la pendiente
+        self.assertTrue(w.step())
+        self.assertEqual(len(self._posts()), 4)
+        self.assertEqual(self.con.execute("SELECT state FROM demo_jobs WHERE match_id=100").fetchone()[0], "done")
+        self.assertIsNone(demo.lane_rows(self.con, 900))
+
     def test_lane_migration_on_old_table(self):
         import sqlite3
         path = os.path.join(self.tmp.name, "viejo2.db")

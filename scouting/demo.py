@@ -423,11 +423,12 @@ class Worker:
             return False
         libres = self.budget - self.client.posts_last_hour()
         con = self.con_factory()
-        fila = None
-        if libres >= len(QUERIES):
-            fila = con.execute("SELECT match_id, attempts FROM demo_jobs WHERE state='pending' AND next_try<=? "
-                               "ORDER BY match_id DESC LIMIT 1", (int(t),)).fetchone()
+        fila = con.execute("SELECT match_id, attempts FROM demo_jobs WHERE state='pending' AND next_try<=? "
+                           "ORDER BY match_id DESC LIMIT 1", (int(t),)).fetchone()
         if fila is not None:
+            # Una partida nueva espera sus 4 POST: no se gasta el presupuesto liberado en relleno.
+            if libres < len(QUERIES):
+                return False
             try:
                 return self._procesar(con, t, fila["match_id"], fila["attempts"])
             finally:
