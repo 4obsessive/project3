@@ -5,7 +5,8 @@ import json
 import os
 import unittest
 
-from scouting import demo, lanes, lanephase, matches
+from scouting import demo, lanes, lanephase, matches, playerstats
+from scouting.minimap import load_calibration
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "match_135801973.json.gz")
@@ -222,6 +223,83 @@ class LanePhase(unittest.TestCase):
     def test_json_serializable(self):
         json.dumps(self.res)
         json.dumps(lanephase.lane_phase(self.mi))
+
+    def test_stats_dmg_without_stats_is_none(self):
+        mi = copy.deepcopy(self.mi)
+        mi["players"][0]["stats"] = []
+        slot = mi["players"][0]["player_slot"]
+        done, taken = lanephase._stats_dmg(mi)
+        self.assertIsNone(done[slot])
+        self.assertIsNone(taken[slot])
+        self.assertIsNone(lanephase.lane_phase(mi)["players"][str(slot)]["dmg_done"])
+
+
+class PlayerStats(unittest.TestCase):
+    def setUp(self):
+        self.mi = _mi()
+        self.lp = lanephase.lane_phase(self.mi)
+        self.res = playerstats.player_stats(self.mi, self.lp)
+        self.by = {r["slot"]: r for r in self.res}
+
+    def test_direct_metadata(self):
+        self.assertEqual(len(self.res), len(self.mi["players"]))
+        for p in self.mi["players"]:
+            r = self.by[p["player_slot"]]
+            for k in ("kills", "deaths", "assists", "last_hits", "denies", "net_worth", "team", "account_id", "hero_id"):
+                self.assertEqual(r[k], p[k], k)
+            self.assertEqual(r["lane"], self.lp["players"][str(p["player_slot"])]["lane"])
+            self.assertEqual(r["ganks_made"], self.lp["players"][str(p["player_slot"])]["ganks_made"])
+
+    def test_cells_sum_to_positioned_events(self):
+        ds = matches.deaths(self.mi)
+        cal = load_calibration()
+        for r in self.res:
+            s = r["slot"]
+            ek = [d for d in ds if d["killer_slot"] == s and d["killer_team"] != d["victim_team"]
+                  and d["kx"] is not None and d["ky"] is not None]
+            ed = [d for d in ds if d["victim_slot"] == s and d["x"] is not None and d["y"] is not None]
+            self.assertLessEqual(sum(c[2] for c in r["kill_cells"]), len(ek))
+            self.assertLessEqual(sum(c[2] for c in r["death_cells"]), len(ed))
+            self.assertGreater(sum(c[2] for c in r["death_cells"]), 0) if ed else None
+            self.assertEqual(sum(c[2] for c in r["death_cells"]) + _off(ed, r["team"], cal), len(ed))
+            self.assertEqual(sum(c[2] for c in r["kill_cells"]) + _off(ek, r["team"], cal, True), len(ek))
+
+    def test_economy_and_stats(self):
+        eco = {e["slot"]: e for e in matches.economy(self.mi)["players"]}
+        for p in self.mi["players"]:
+            r, s = self.by[p["player_slot"]], p["player_slot"]
+            self.assertEqual(r["nw_per_min"], eco[s]["per_min"]["net_worth"])
+            self.assertEqual(r["troopers_per_min"], eco[s]["per_min"]["troopers_kills"])
+            self.assertEqual(r["jungla_per_min"], eco[s]["per_min"]["jungla_kills"])
+            self.assertEqual(r["sources"], eco[s]["sources"])
+            self.assertEqual(r["nw_at_600"], matches.stat_at(p, "net_worth", 600))
+            self.assertEqual(r["player_damage"], p["stats"][-1]["player_damage"])
+            self.assertEqual(r["damage_taken"], p["stats"][-1]["player_damage_taken"])
+            self.assertEqual(r["kda"], round((p["kills"] + p["assists"]) / max(p["deaths"], 1), 2))
+
+    def test_player_without_stats_gives_none(self):
+        mi = copy.deepcopy(self.mi)
+        mi["players"][0]["stats"] = []
+        slot = mi["players"][0]["player_slot"]
+        r = {x["slot"]: x for x in playerstats.player_stats(mi, lanephase.lane_phase(mi))}[slot]
+        for k in ("nw_at_600", "player_damage", "damage_taken"):
+            self.assertIsNone(r[k], k)
+
+    def test_json_serializable(self):
+        json.dumps(self.res)
+
+
+def _off(events, team, cal, killer=False):
+    """Eventos cuya posición cae fuera de la cuadrícula (sin celda)."""
+    from scouting.report import cell_of
+    n = 0
+    for d in events:
+        x, y = (d["kx"], d["ky"]) if killer else (d["x"], d["y"])
+        if team == 1:
+            x, y = -x, -y
+        if cell_of(x, y, cal) is None:
+            n += 1
+    return n
 
 
 if __name__ == "__main__":

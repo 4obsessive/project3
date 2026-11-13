@@ -11,13 +11,14 @@ def _slot_of(mi):
 
 
 def _stats_dmg(mi, t=T_FIN):
-    """({slot: hecho}, {slot: recibido}) a `t` s desde las muestras player_damage / player_damage_taken (interpoladas)."""
+    """({slot: hecho}, {slot: recibido}) a `t` s desde las muestras player_damage / player_damage_taken (interpoladas).
+    Un jugador sin muestras da None (dato ausente, no 0)."""
     done, taken = {}, {}
     for p in mi.get("players") or []:
         d = matches.stat_at(p, "player_damage", t)
         k = matches.stat_at(p, "player_damage_taken", t)
-        done[p["player_slot"]] = int(round(d or 0))
-        taken[p["player_slot"]] = int(round(k or 0))
+        done[p["player_slot"]] = None if d is None else int(round(d))
+        taken[p["player_slot"]] = None if k is None else int(round(k))
     return done, taken
 
 
@@ -130,7 +131,9 @@ def lane_phase(mi, lane_rows=None, rules=None, paths=None):
         del e["vlane"]
 
     def tot(d, slots, on):
-        return sum(d[s] for s in slots) if on else None
+        if not on or any(d[s] is None for s in slots):
+            return None
+        return sum(d[s] for s in slots)
 
     out_lanes = {}
     for tm, per_lane in duo.items():
