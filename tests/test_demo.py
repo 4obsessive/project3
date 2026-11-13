@@ -69,6 +69,30 @@ class Summarize(unittest.TestCase):
         self.assertIsNone(m["stolen"])
         self.assertEqual(m["rejuv"], {"0": 3, "1": 0})
 
+    def test_initiator_is_higher_damage_team(self):
+        # El equipo 2 (API 0) golpea primero pero hace menos daño; el 3 (API 1) inicia y el 2 roba.
+        midboss = [
+            {"victim": 1, "team": 2, "dmg": 100, "t0": 1000, "t1": 6000},
+            {"victim": 1, "team": 3, "dmg": 900, "t0": 2000, "t1": 6400},
+        ]
+        rejuv = [{"tick": 6500 + i, "killing_team": 2, "user_team": 2} for i in range(3)]
+        rules = [{"tick": 0, "koth_team": 0, "koth_scoring": 0.0, "koth_start": 0.0,
+                  "koth_give_up": 0.0, "paused_ticks": 0, "game_start": 0.0}]
+        m = demo.summarize({"rejuv": rejuv, "rules": rules, "midboss": midboss})["midboss"][0]
+        self.assertEqual(m["initiator"], 1)
+        self.assertEqual(m["killer"], 0)
+        self.assertIs(m["stolen"], True)
+
+    def test_initiator_tie(self):
+        midboss = [
+            {"victim": 1, "team": 2, "dmg": 500, "t0": 1000, "t1": 6000},
+            {"victim": 1, "team": 3, "dmg": 500, "t0": 2000, "t1": 6400},
+        ]
+        rejuv = [{"tick": 6500, "killing_team": 2, "user_team": 2}]
+        m = demo.summarize({"rejuv": rejuv, "rules": [], "midboss": midboss})["midboss"][0]
+        self.assertIsNone(m["initiator"])
+        self.assertIsNone(m["stolen"])
+
     def test_summary_json_serializable(self):
         self.assertEqual(json.loads(json.dumps(self.s)), self.s)
 

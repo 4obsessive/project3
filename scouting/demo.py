@@ -82,9 +82,10 @@ def _midboss(results, rules):
         con_dano = [f for f in e["filas"] if f["dmg"] > 0 and _api(f["team"]) is not None]
         for f in con_dano:
             dmg[str(_api(f["team"]))] += f["dmg"]
-        inicia = min(con_dano, key=lambda f: f["t0"]) if con_dano else None
+        # Inicia el equipo que más daño hizo; empate (o 0 en ambos) -> None, sin inventar.
+        inicia = None if dmg["0"] == dmg["1"] else (0 if dmg["0"] > dmg["1"] else 1)
         lista.append({"t_tick": e["t1"], "damage": dmg,
-                      "initiator": _api(inicia["team"]) if inicia else None,
+                      "initiator": inicia,
                       "killer": None, "rejuv_rows": []})
     lista.sort(key=lambda x: x["t_tick"])
 
