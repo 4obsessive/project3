@@ -1,48 +1,42 @@
-"""Resumen de la fase de líneas (0-600 s) de una partida: dúos por línea, daño, Guardians y gankeos."""
+"""Resumen de la fase de líneas (0-600 s, ambos extremos incluidos) de una partida: dúos por línea, daño, Guardians y gankeos."""
 from . import demo, lanes as lanes_mod, matches
 
 T_FIN = 600
 T_GANK = 60
+GAP_EPISODIO = 30
 
 
 def _slot_of(mi):
     return {p["account_id"]: p["player_slot"] for p in mi.get("players") or []}
 
 
-def _interp_dmg(mi, t=T_FIN):
-    """({slot: hecho}, {slot: recibido}) contra héroes enemigos, interpolando el acumulado de damage_matrix a `t`."""
-    dm = mi.get("damage_matrix") or {}
-    samples = dm.get("sample_time_s") or []
-    team = {p["player_slot"]: p.get("team") for p in mi.get("players") or []}
-    done = {s: 0.0 for s in team}
-    taken = {s: 0.0 for s in team}
-    if not samples:
-        return {s: 0 for s in team}, {s: 0 for s in team}
-    ts = [0] + list(samples)
+def _stats_dmg(mi, t=T_FIN):
+    """({slot: hecho}, {slot: recibido}) a `t` s desde las muestras player_damage / player_damage_taken (interpoladas)."""
+    done, taken = {}, {}
+    for p in mi.get("players") or []:
+        d = matches.stat_at(p, "player_damage", t)
+        k = matches.stat_at(p, "player_damage_taken", t)
+        done[p["player_slot"]] = int(round(d or 0))
+        taken[p["player_slot"]] = int(round(k or 0))
+    return done, taken
 
-    def at(arr):
-        vals = [0] + list(arr)
-        vals += [vals[-1]] * (len(ts) - len(vals))   # los acumulados cortos se mantienen
-        if t >= ts[-1]:
-            return vals[-1]
-        for i in range(1, len(ts)):
-            if t <= ts[i]:
-                return vals[i - 1] + (vals[i] - vals[i - 1]) * (t - ts[i - 1]) / (ts[i] - ts[i - 1])
-        return vals[-1]
 
-    for dealer in dm.get("damage_dealers") or []:
-        a = dealer.get("dealer_player_slot")
-        if a not in team:
-            continue
-        for src in dealer.get("damage_sources") or []:
-            for tg in src.get("damage_to_players") or []:
-                v = tg.get("target_player_slot")
-                if v not in team or team[v] == team[a]:
-                    continue
-                x = at(tg.get("damage") or [])
-                done[a] += x
-                taken[v] += x
-    return {s: int(round(v)) for s, v in done.items()}, {s: int(round(v)) for s, v in taken.items()}
+def _episodes(events):
+    """Agrupa eventos cruzados en episodios de gankeo.
+
+    Eventos consecutivos (daño o kill) del mismo atacante hacia la misma línea de víctima con huecos
+    < GAP_EPISODIO s forman un solo episodio. Devuelve [{"att", "victims": set}]."""
+    eps, last = [], {}
+    for e in sorted(events, key=lambda e: e["t"]):
+        key = (e["attacker_slot"], e["vlane"])
+        ep = last.get(key)
+        if ep is None or e["t"] - ep["t_last"] >= GAP_EPISODIO:
+            ep = {"att": e["attacker_slot"], "victims": set(), "t_last": e["t"]}
+            eps.append(ep)
+            last[key] = ep
+        ep["victims"].add(e["victim_slot"])
+        ep["t_last"] = e["t"]
+    return eps
 
 
 def _event(t, att, vic, kind):
@@ -59,6 +53,8 @@ def _better(cur, new):
 
 
 def lane_phase(mi, lane_rows=None, rules=None, paths=None):
+    """Resumen por partida. ganks_made/ganks_suffered por jugador cuentan EPISODIOS (ver _episodes), no eventos.
+    Con las líneas no válidas: lanes {}, source None, lane/ganks None; el daño por jugador se mantiene."""
     ps = matches.players(mi)
     team = {s: p.get("team") for s, p in ps.items()}
     lane_of = lanes_mod.assign_lanes(mi, paths if paths is not None else lanes_mod.load_paths())
@@ -92,7 +88,7 @@ def lane_phase(mi, lane_rows=None, rules=None, paths=None):
                     if t >= T_GANK and r["dmg"] > 0:
                         gank_ev.append(_event(t, a, v, "dano"))
     else:
-        d_done, d_taken = _interp_dmg(mi)
+        d_done, d_taken = _stats_dmg(mi)
         for s in ps:
             d_done.setdefault(s, 0)
             d_taken.setdefault(s, 0)
@@ -100,7 +96,7 @@ def lane_phase(mi, lane_rows=None, rules=None, paths=None):
     deaths, kills = {s: 0 for s in ps}, {s: 0 for s in ps}
     for d in matches.deaths(mi):
         t = d["t"]
-        if t is None or t >= T_FIN:
+        if t is None or t > T_FIN:
             continue
         deaths[d["victim_slot"]] += 1
         k = d["killer_slot"]
@@ -125,8 +121,13 @@ def lane_phase(mi, lane_rows=None, rules=None, paths=None):
         k = (lane_of[v], team[v])
         suffered[k] = _better(suffered.get(k), e)
     for e in gank_ev:
-        ganks_made[e["attacker_slot"]] += 1
-        ganks_suffered[e["victim_slot"]] += 1
+        e["vlane"] = lane_of[e["victim_slot"]]
+    for ep in _episodes(gank_ev):
+        ganks_made[ep["att"]] += 1
+        for v in ep["victims"]:
+            ganks_suffered[v] += 1
+    for e in gank_ev:
+        del e["vlane"]
 
     def tot(d, slots, on):
         return sum(d[s] for s in slots) if on else None
@@ -149,6 +150,7 @@ def lane_phase(mi, lane_rows=None, rules=None, paths=None):
             }
     players = {str(s): {"lane": lane_of.get(s) if valid else None,
                         "dmg_done": d_done[s], "dmg_taken": d_taken[s],
-                        "ganks_made": ganks_made[s], "ganks_suffered": ganks_suffered[s],
+                        "ganks_made": ganks_made[s] if valid else None,
+                        "ganks_suffered": ganks_suffered[s] if valid else None,
                         "deaths": deaths[s], "kills": kills[s]} for s in sorted(ps)}
-    return {"valid": valid, "source": "demo" if use_demo else "aprox", "lanes": out_lanes, "players": players}
+    return {"valid": valid, "source": ("demo" if use_demo else "aprox") if valid else None, "lanes": out_lanes, "players": players}

@@ -152,11 +152,54 @@ class LanePhase(unittest.TestCase):
                 self.assertIsNone(d["dmg_taken_lane"])
                 self.assertIsNone(d["dmg_taken_gank"])
                 self.assertGreaterEqual(d["dmg_done"], 0)
-                self.assertGreaterEqual(d["dmg_taken"], 0)
-        self.assertGreater(sum(p["dmg_done"] for p in res["players"].values()), 0)
+        # interpolación a mano entre las muestras de 540 s y 720 s
+        for p in self.mi["players"]:
+            st = {s["time_stamp_s"]: s for s in p["stats"]}
+            f = (600 - 540) / (720 - 540)
+            for fld, key in (("player_damage", "dmg_done"), ("player_damage_taken", "dmg_taken")):
+                exp = round(st[540][fld] + (st[720][fld] - st[540][fld]) * f)
+                self.assertEqual(res["players"][str(p["player_slot"])][key], exp)
+        p0 = next(p for p in self.mi["players"] if p["player_slot"] == 1)
+        st = {s["time_stamp_s"]: s for s in p0["stats"]}
+        self.assertEqual(res["players"]["1"]["dmg_done"], round(st[540]["player_damage"] + (st[720]["player_damage"] - st[540]["player_damage"]) / 3))
+        self.assertLess(max(p["dmg_done"] for p in res["players"].values()), 20000)
+
+    def test_first_gank_golden_values(self):
+        g = lambda ln, tm, k: self.res["lanes"][ln][tm][k]
+        self.assertEqual(g("4", "0", "first_gank_made"), {"t": 235, "attacker_slot": 1, "victim_slot": 8, "kind": "dano"})
+        self.assertEqual(g("4", "1", "first_gank_made"), {"t": 250, "attacker_slot": 9, "victim_slot": 6, "kind": "dano"})
+        self.assertEqual(g("1", "0", "first_gank_made"), {"t": 400, "attacker_slot": 2, "victim_slot": 7, "kind": "kill"})
+        self.assertEqual(g("1", "1", "first_gank_made"), {"t": 295, "attacker_slot": 12, "victim_slot": 5, "kind": "dano"})
+        self.assertEqual(g("3", "0", "first_gank_made"), {"t": 265, "attacker_slot": 3, "victim_slot": 9, "kind": "dano"})
+        self.assertEqual(g("3", "1", "first_gank_made"), {"t": 265, "attacker_slot": 10, "victim_slot": 1, "kind": "dano"})
+        self.assertEqual(g("1", "1", "first_gank_suffered"), g("1", "0", "first_gank_made"))
+
+    def test_tie_prefers_kill(self):
+        dano = {"t": 100, "attacker_slot": 1, "victim_slot": 2, "kind": "dano"}
+        kill = {"t": 100, "attacker_slot": 3, "victim_slot": 2, "kind": "kill"}
+        self.assertEqual(lanephase._better(dano, kill), kill)
+        self.assertEqual(lanephase._better(kill, dano), kill)
+        early = {"t": 90, "attacker_slot": 1, "victim_slot": 2, "kind": "dano"}
+        self.assertEqual(lanephase._better(kill, early), early)
+
+    def test_episodes_merge_by_gap(self):
+        ev = lambda t, a, v, vl: {"t": t, "attacker_slot": a, "victim_slot": v, "vlane": vl, "kind": "dano"}
+        evs = [ev(100, 1, 7, 3), ev(105, 1, 7, 3), ev(125, 1, 8, 3),   # un episodio (huecos < 30), 2 víctimas
+               ev(155, 1, 7, 3),                                         # hueco 30 -> nuevo episodio
+               ev(100, 1, 9, 4),                                         # otra línea -> otro episodio
+               ev(101, 2, 7, 3)]                                         # otro atacante
+        eps = lanephase._episodes(evs)
+        self.assertEqual(len(eps), 4)
+        e1 = next(e for e in eps if e["att"] == 1 and 8 in e["victims"])
+        self.assertEqual(e1["victims"], {7, 8})
+
+    def test_player_gank_counts_are_episodes(self):
+        self.assertEqual(sum(1 for _ in self._timed()) > 0, True)
+        self.assertLess(self.res["players"]["2"]["ganks_made"], 19)
+        self.assertGreater(self.res["players"]["2"]["ganks_made"], 0)
 
     def test_deaths_kills_before_600(self):
-        ds = [d for d in matches.deaths(self.mi) if d["t"] < 600]
+        ds = [d for d in matches.deaths(self.mi) if d["t"] <= 600]
         for slot in self.team:
             p = self.res["players"][str(slot)]
             self.assertEqual(p["deaths"], sum(1 for d in ds if d["victim_slot"] == slot))
@@ -169,7 +212,12 @@ class LanePhase(unittest.TestCase):
         res = lanephase.lane_phase(self.mi, self.rows, self.rules, paths=paths)
         self.assertFalse(res["valid"])
         self.assertEqual(res["lanes"], {})
-        self.assertTrue(all(p["lane"] is None for p in res["players"].values()))
+        self.assertIsNone(res["source"])
+        for p in res["players"].values():
+            self.assertIsNone(p["lane"])
+            self.assertIsNone(p["ganks_made"])
+            self.assertIsNone(p["ganks_suffered"])
+            self.assertIsNotNone(p["dmg_done"])
 
     def test_json_serializable(self):
         json.dumps(self.res)
