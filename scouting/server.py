@@ -540,7 +540,18 @@ class App:
             except (ApiError, matches.MatchError) as e:
                 errors.append({"match_id": mid, "error": str(e)})
         demo_summaries = {d["match_info"]["match_id"]: demo.summary(con, d["match_info"]["match_id"]) for d in datas}
-        out = report.run(team or "Plantilla manual", datas, roster, body.get("side_overrides"), body.get("params"), demo_summaries)
+        mids = [d["match_info"]["match_id"] for d in datas]
+        lane_data = {mid: demo.lane_data(con, mid) for mid in mids}
+        player_ids = {}
+        for d in datas:
+            for p in d["match_info"].get("players") or []:
+                aid = p.get("account_id")
+                if aid in roster and aid not in player_ids:
+                    r = con.execute("SELECT p.id, p.display_name FROM accounts a JOIN players p ON p.id=a.player_id WHERE a.account_id=?", (aid,)).fetchone()
+                    if r:
+                        player_ids[aid] = {"player_id": r[0], "name": r[1]}
+        out = report.run(team or "Plantilla manual", datas, roster, body.get("side_overrides"), body.get("params"), demo_summaries,
+                         lane_data=lane_data, player_ids=player_ids, hero_names=self._hero_names())
         out["load_errors"] = errors
         out["roster_size"] = len(roster)
         return out

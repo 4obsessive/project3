@@ -42,7 +42,7 @@ def _load_all():
 
 # ------------------------------------------------------------------ contexto
 class MatchCtx:
-    def __init__(self, data, our, side_source, roster_counts, demo_summary=None):
+    def __init__(self, data, our, side_source, roster_counts, demo_summary=None, lane_data=None):
         self.data = data
         self.mi = data["match_info"]
         self.id = self.mi["match_id"]
@@ -55,12 +55,31 @@ class MatchCtx:
         self._deaths = None
         self._objs = None
         self._demo = demo_summary
+        self._lane_data = lane_data
+        self._lane_phase = None
+        self._player_stats = None
 
     @property
     def demo(self):
         """Resumen del demo de la partida o None si no hay datos (state != done)."""
         d = self._demo
         return d if isinstance(d, dict) and d.get("state") == "done" else None
+
+    @property
+    def lane_phase(self):
+        """Fase de líneas de la partida (mismo cálculo que la vista de partida); con lane_data → source "demo"."""
+        if self._lane_phase is None:
+            from .. import lanephase
+            ld = self._lane_data
+            self._lane_phase = lanephase.lane_phase(self.mi, ld["rows"] if ld else None, ld["rules"] if ld else None)
+        return self._lane_phase
+
+    @property
+    def player_stats(self):
+        if self._player_stats is None:
+            from .. import playerstats
+            self._player_stats = playerstats.player_stats(self.mi, self.lane_phase)
+        return self._player_stats
 
     @property
     def deaths(self):
@@ -94,6 +113,11 @@ class ReportCtx:
         self.skipped = skipped
         self.n = len(matches)
         self.findings = []
+        self.player_ids = {}
+        self.hero_names = {}
+
+    def hero(self, hid):
+        return self.hero_names.get(hid) or f"#{hid}"
 
     def finding(self, kind, text, support=None, total=None, baseline=0.5):
         """kind: strength | weakness | pattern | improve | opportunity
@@ -160,10 +184,11 @@ def detect_side(mi, roster):
 
 
 # ------------------------------------------------------------------- run
-def run(team, match_datas, roster, side_overrides=None, params=None, demo_summaries=None):
+def run(team, match_datas, roster, side_overrides=None, params=None, demo_summaries=None, lane_data=None, player_ids=None, hero_names=None):
     _load_all()
     params = dict({"midboss_window_s": 90, "normalize": True}, **(params or {}))
     demo_summaries = demo_summaries or {}
+    lane_data = lane_data or {}
     side_overrides = {int(k): int(v) for k, v in (side_overrides or {}).items() if v in (0, 1, "0", "1")}
     ctxs, skipped, sides = [], [], []
     for d in match_datas:
@@ -178,8 +203,10 @@ def run(team, match_datas, roster, side_overrides=None, params=None, demo_summar
         if our is None:
             skipped.append({"match_id": mid, "reason": "No se pudo detectar el lado (ningún jugador de la plantilla o empate). Elige el lado a mano."})
             continue
-        ctxs.append(MatchCtx(d, our, src, counts, demo_summaries.get(mid)))
+        ctxs.append(MatchCtx(d, our, src, counts, demo_summaries.get(mid), lane_data.get(mid)))
     ctx = ReportCtx(team, ctxs, params, skipped)
+    ctx.player_ids = {int(k): v for k, v in (player_ids or {}).items()}
+    ctx.hero_names = {int(k): v for k, v in (hero_names or {}).items()}
     sections = []
     conclusions = None
     for m in METRICS:

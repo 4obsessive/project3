@@ -333,5 +333,62 @@ class PayloadExtras(unittest.TestCase):
         json.dumps(out)
 
 
+class ReportLanes(unittest.TestCase):
+    """Informe de equipo: fase de líneas por dúo y jugadores (mismos números que la vista de partida)."""
+    MID = 135801973
+
+    def setUp(self):
+        from scouting import report
+        self.mi = _mi()
+        self.data = {"match_info": self.mi}
+        self.roster = {p["account_id"] for p in self.mi["players"] if p["team"] == 1}
+        self.rows = _load("demo_lane_135801973.json")["rows"]
+        self.rules = _load("demo_135801973.json")["results"]["rules"]
+        self.ld = {self.MID: {"rows": self.rows, "rules": self.rules}}
+        self.out = report.run("T", [self.data], self.roster, None, None, None, lane_data=self.ld,
+                              hero_names={})
+        self.sec = {s["id"]: s for s in self.out["sections"]}
+        self.lp = lanephase.lane_phase(self.mi, self.rows, self.rules)
+
+    def test_sections_present(self):
+        self.assertIn("fase_lineas", self.sec)
+        self.assertIn("jugadores", self.sec)
+        for s in ("fase_lineas", "jugadores"):
+            self.assertNotIn("error", self.sec[s])
+
+    def test_one_duo_per_lane_n1_and_damage_equals_match(self):
+        tables = [b for b in self.sec["fase_lineas"]["blocks"] if b.get("type") == "table" and b.get("kind") == "duos"]
+        self.assertEqual(len(tables), 3)
+        for t in tables:
+            self.assertEqual(len(t["rows"]), 1)
+            r = t["rows"][0]
+            self.assertEqual(r["n"], 1)
+            ref = self.lp["lanes"][str(r["carril_id"])]["1"]
+            self.assertEqual(r["dmg_done"], ref["dmg_done"])
+            self.assertEqual(r["dmg_taken"], ref["dmg_taken"])
+            self.assertEqual(r["dmg_taken_gank"], ref["dmg_taken_gank"])
+
+    def test_players_six_with_kills(self):
+        tb = next(b for b in self.sec["jugadores"]["blocks"] if b.get("kind") == "jugadores")
+        self.assertEqual(len(tb["rows"]), 6)
+        ps = {p["account_id"]: p for p in playerstats.player_stats(self.mi, self.lp)}
+        self.assertEqual(sum(r["kills"] for r in tb["rows"]), sum(ps[a]["kills"] for a in self.roster))
+        for r in tb["rows"]:
+            self.assertEqual(r["lane_dmg_done"], ps[r["account_id"]]["lane_dmg_done"])
+
+    def test_without_demo_damage_unavailable(self):
+        from scouting import report
+        out = report.run("T", [self.data], self.roster)
+        sec = {s["id"]: s for s in out["sections"]}
+        blocks = sec["fase_lineas"]["blocks"]
+        self.assertTrue(any(b.get("type") == "unavailable" for b in blocks))
+        for t in (b for b in blocks if b.get("kind") == "duos"):
+            self.assertIsNone(t["rows"][0]["dmg_done"])
+        json.dumps(out)
+
+    def test_json_serializable(self):
+        json.dumps(self.out)
+
+
 if __name__ == "__main__":
     unittest.main()
