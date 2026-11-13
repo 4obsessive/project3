@@ -1,5 +1,5 @@
 import { api, getHeroes } from '../api.js';
-import { el, fmt, dataTable, toast, spinner, store, errorBox } from '../util.js';
+import { el, fmt, dataTable, toast, spinner, store, errorBox, headline } from '../util.js';
 import { renderSection, setLanes } from '../blocks.js';
 import { heroPortrait } from '../art.js';
 
@@ -61,10 +61,10 @@ export async function render(root, ctx) {
     let heroes = [];
     try { heroes = await getHeroes(); } catch (e) { /* sin catálogo: se muestran las iniciales */ }
     const byId = new Map(heroes.map(h => [h.id, h]));
-    return el('div', { class: 'row', style: { gap: '10px', flexWrap: 'wrap', margin: '8px 0' }, 'aria-label': 'Héroes del equipo en las partidas analizadas' },
+    return el('div', { class: 'report-heroes tilt-cards', role: 'group', 'aria-label': 'Héroes del equipo en las partidas analizadas' },
       r.our_heroes.map(o => {
         const h = byId.get(o.hero_id) || { id: o.hero_id, name: `#${o.hero_id}` };
-        return el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '4px' }, title: `${h.name}: ${o.matches} partidas` },
+        return el('span', { title: `${h.name}: ${o.matches} partidas` },
           heroPortrait(h, { size: 'md', shape: 'card' }), el('b', {}, `×${o.matches}`));
       }));
   }
@@ -74,7 +74,7 @@ export async function render(root, ctx) {
     setLanes(r.lanes);
     const TN = r.team_names;
     const head = el('div', { class: 'panel' },
-      el('h2', {}, `Informe: ${r.team}`),
+      headline('Informe de ', r.team || 'cuentas extra'),
       el('div', { class: 'muted' }, `${r.n} partidas analizadas · plantilla de ${r.roster_size} cuentas · ventana Midboss ${r.params.midboss_window_s} s · ${r.params.normalize ? 'lado normalizado' : 'sin normalizar'}`),
       r.team_names_verified ? null : el('div', { class: 'muted small' }, 'Nombres de lado (equipo 0 = Hidden King, 1 = Archmother) según fuentes de terceros; que el equipo 0 tiene la base abajo está verificado.'),
       r.load_errors.length ? el('div', { class: 'note warning block' }, el('span', { class: 'lbl' }, 'aviso'), 'No se pudieron cargar: ' + r.load_errors.map(e => `${e.match_id} (${e.error})`).join(' · ')) : null);
@@ -92,7 +92,7 @@ export async function render(root, ctx) {
         } },
       ], sideRows),
       el('button', { onclick: run }, 'Recalcular con estos lados')));
-    const toc = el('nav', { class: 'row small no-print', 'aria-label': 'Índice del informe' }, r.sections.map(s => el('button', { type: 'button', class: 'linkbtn', onclick: () => { const t = document.getElementById('sec-' + s.id); if (t) { t.tabIndex = -1; t.scrollIntoView({ behavior: 'smooth' }); t.focus({ preventScroll: true }); } } }, s.title)));
+    const toc = el('nav', { class: 'toc no-print', 'aria-label': 'Índice del informe' }, el('ol', {}, r.sections.map(s => el('li', {}, el('button', { type: 'button', class: 'linkbtn', onclick: () => { const t = document.getElementById('sec-' + s.id); if (t) { t.tabIndex = -1; t.scrollIntoView({ behavior: 'smooth' }); t.focus({ preventScroll: true }); } } }, s.title)))));
     head.append(toc, el('button', { class: 'no-print', onclick: () => window.print() }, 'Imprimir / PDF'));
     out.append(head, ...r.sections.map(renderSection));
     // los retratos se insertan bajo la línea de resumen cuando llega el catálogo de héroes

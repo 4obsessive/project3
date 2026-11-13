@@ -49,7 +49,7 @@ function zoneMap(b) {
   } catch (e) { return null; }
 }
 
-const TONE ={ confirmed: 'confirmado', warning: 'aviso', info: 'nota' };
+const TONE = { confirmed: 'confirmado', warning: 'aviso', info: 'nota' };
 
 export function renderBlock(b) {
   const title = (t, n) => t ? el('div', { class: 'chart-title' }, el('b', {}, t), n != null ? el('span', { class: 'n-badge' }, `n = ${n} partidas`) : null) : null;

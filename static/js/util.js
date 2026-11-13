@@ -172,6 +172,11 @@ export function cssVar(name, fallback = '') {
   return v || fallback;
 }
 
+/** Titular de cartel: una palabra destacada en etiqueta naranja (estilo «City Never Sleeps»). */
+export function headline(before, highlight, after = '') {
+  return el('h2', { class: 'headline' }, before, el('mark', { class: 'tag-word' }, highlight), after || null);
+}
+
 export const store = {
   get(k, d) { try { const v = localStorage.getItem('dls.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('dls.' + k, JSON.stringify(v)); } catch { /* sin almacenamiento */ } },

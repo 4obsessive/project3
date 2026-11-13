@@ -125,7 +125,7 @@ const teamSum = (m, t, k) => m.players.filter(p => p.team === t).reduce((a, p) =
 
 function scoreboard(m, TN, verified) {
   const side = t => el('div', { class: `bside t${t}` + (m.winning_team === t ? ' won' : '') },
-    el('div', { class: 'bstrip' }, m.players.filter(p => p.team === t).sort((x, y) => y.net_worth - x.net_worth).slice(0, 6)
+    el('div', { class: 'bstrip tilt-cards' }, m.players.filter(p => p.team === t).sort((x, y) => y.net_worth - x.net_worth).slice(0, 6)
       .map(p => el('span', { class: 'bcell', title: `${p.hero} · ${pname(p)}` }, portrait(p, { size: 'md', shape: 'card' })))),
     el('div', { class: 'blabel' },
       el('div', { class: 'bname' }, el('span', { class: `tag t${t}` }, `Equipo ${t}`), el('b', {}, TN[t])),

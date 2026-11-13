@@ -25,15 +25,16 @@ export async function render(root, ctx) {
   const counts = status?.counts || {};
   const empty = !counts.players;
 
-  root.append(el('section', { class: 'hero' }, heroMosaic(players, heroList),
+  const cards = heroCards(players, heroList);
+  root.append(el('section', { class: 'hero' },
     el('div', { class: 'hero-text' },
       el('span', { class: 'eyebrow' }, `Scouting · ${status?.region || 'región'} · ${(status?.season_names || {})[status?.current_leaderboard_id] || 'temporada actual'}`),
-      el('h1', {}, 'Encuentra, compara y analiza ', el('span', { class: 'accent' }, 'jugadores de Deadlock')),
+      el('h1', {}, 'Encuentra, compara y analiza ', el('mark', { class: 'tag-word' }, 'jugadores'), ' de Deadlock'),
       el('p', {}, 'Sigue la leaderboard de tu región, detecta jugadores libres y en racha, y revisa partidas y rivales con gráficas claras. Todo se queda en tu ordenador.'),
       el('div', { class: 'row' },
         el('a', { class: 'btn primary', href: '#jugadores' }, icon('jugadores'), 'Ver jugadores'),
         el('a', { class: 'btn', href: '#partidas' }, icon('partidas'), 'Analizar una partida'))),
-    el('div', { class: 'hero-art', 'aria-hidden': 'true' })));
+    el('div', { class: 'hero-art' + (cards ? ' has-cards' : ''), 'aria-hidden': 'true' }, cards)));
 
   const kpi = (ic, value, label, sub) => el('div', { class: 'kpi' }, el('span', { class: 'kpi-ico' }, icon(ic)),
     el('div', {}, el('div', { class: 'kpi-val' }, value), el('div', { class: 'kpi-lbl' }, label), sub ? el('div', { class: 'kpi-sub' }, sub) : null));
@@ -76,16 +77,16 @@ export async function render(root, ctx) {
       el('span', { class: 'quick-ico' }, icon(v)), el('span', { class: 'quick-t' }, t), el('span', { class: 'quick-d' }, d)))));
 }
 
-// Los 12 héroes con más partidas sumadas entre todos los jugadores; decorativo.
-function heroMosaic(players, heroList) {
+// Los 8 héroes con más partidas sumadas entre todos los jugadores, como cartas inclinadas; decorativo.
+function heroCards(players, heroList) {
   const total = new Map();
   for (const p of players) for (const h of p.heroes || []) total.set(h.hero_id, (total.get(h.hero_id) || 0) + (h.matches || 0));
   const byId = new Map(heroList.map(h => [h.id, h]));
-  const top = [...total.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
+  const top = [...total.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
     .map(([id]) => byId.get(id)).filter(Boolean);
   if (!top.length) return null;
-  const box = el('div', { class: 'hero-mosaic', 'aria-hidden': 'true' });
-  for (const h of top) { const img = heroPortrait(h, { size: 'lg', shape: 'card' }); img.alt = ''; box.append(img); }
+  const box = el('div', { class: 'hero-cards tilt-cards' });
+  for (const h of top) box.append(heroPortrait(h, { size: 'lg', shape: 'card', decorative: true }));
   return box;
 }
 
