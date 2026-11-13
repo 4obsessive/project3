@@ -135,6 +135,7 @@ function scheduleDemoRefresh(root, id, gen, m, onReady, tries = 0) {
       const changed = r.demo?.state !== m.demo?.state || r.lane_phase?.source !== m.lane_phase?.source;
       m.demo = r.demo; m.comeback = r.comeback;
       if (r.lane_phase !== undefined) { m.lane_phase = r.lane_phase; m.player_stats = r.player_stats; }
+      if (r.fights !== undefined) m.fights = r.fights;
       if (changed) onReady();
     }
     scheduleDemoRefresh(root, id, gen, m, onReady, m.demo?.state === 'done' ? tries + 1 : 0);
@@ -479,8 +480,9 @@ function jugadores(root, m, tname) {
   picker.addEventListener('change', () => { sel = picker.value === '' ? null : rows.find(r => String(r.slot) === picker.value); showPlayer(); });
   root.append(el('div', { class: 'row' }, picker), dataTable(cols, rows, { sortKey: 'team', asc: true, onRowClick: r => { sel = r; picker.value = String(r.slot); showPlayer(); } }), detail);
 
-  function cellMap(title, cells, team, color) {
+  function cellMap(title, cells, team, color, absent) {
     const G = 8;
+    if (cells == null) return el('div', { class: 'pj-map' }, el('h4', {}, title), el('p', { class: 'muted small' }, absent));
     const box = el('div');
     const map = new MapView(box, { size: 380, grid: G, label: title });
     // equipo 1: las celdas vienen giradas (base propia abajo); se deshace el giro y se gira el mapa entero
@@ -498,6 +500,13 @@ function jugadores(root, m, tname) {
     detail.append(el('h3', {}, sel.pl ? portrait(sel.pl, { size: 'sm', shape: 'round' }) : null, ` ${sel.hero} · ${sel.pname || '—'} `, laneCell(sel)),
       el('p', { class: 'muted small' }, 'Mapas con la base propia abajo. Kills = lugar donde murió el rival; muertes = lugar de la muerte propia.'),
       el('div', { class: 'grid2' }, cellMap('Kills', sel.kill_cells || [], sel.team, color), cellMap('Muertes', sel.death_cells || [], sel.team, color)),
+      el('h4', {}, 'Without midboss and KOTH fights'),
+      el('p', { class: 'muted small' }, sel.fights
+        ? `Counts by fight type (kills / deaths): midboss ${sel.fights.kills.midboss} / ${sel.fights.deaths.midboss}, KOTH ${sel.fights.kills.koth} / ${sel.fights.deaths.koth}, rest ${sel.fights.kills.rest} / ${sel.fights.deaths.rest}, no position ${sel.fights.kills.unknown} / ${sel.fights.deaths.unknown}. Events without a position are left off the maps.`
+        : 'Not available: the KOTH cannot be identified without the match demo.'),
+      el('div', { class: 'grid2' },
+        cellMap('Kills without objective fights', sel.kill_cells_rest, sel.team, color, 'Not available without the demo (KOTH not identifiable).'),
+        cellMap('Deaths without objective fights', sel.death_cells_rest, sel.team, color, 'Not available without the demo (KOTH not identifiable).')),
       el('h4', {}, 'Almas por fuente'),
       src && Object.keys(src).length ? dataTable([{ key: 'src', label: 'Fuente' }, { key: 'v', label: 'Almas', fmt: 'int' }],
         Object.entries(src).map(([k, v]) => ({ src: names[k] || `Fuente ${k}`, v })), { sortKey: 'v' })
@@ -548,17 +557,20 @@ async function minimapa(root, m, tname) {
   catch (e) { status.replaceWith(errorBox(e.message, () => { root.innerHTML = ''; minimapa(root, m, tname); }, 'No se pudieron cargar las posiciones')); return; }
   status.remove();
   const dur = m.duration_s, step = pos.interval_s;
-  const st = { team: 'all', slot: 'all', from: 0, to: Math.ceil(dur / 60), heat: true, deaths: true, lanes: true, objImgs: false, koth: false, objectives: false, rotate: false };
+  const st = { team: 'all', slot: 'all', from: 0, to: Math.ceil(dur / 60), heat: true, deaths: true, noObj: false, lanes: true, objImgs: false, koth: false, objectives: false, rotate: false };
   const teamSel = el('select', { 'aria-label': 'Equipo' }, [['all', 'Ambos equipos'], ['0', tname(0)], ['1', tname(1)]].map(([v, l]) => el('option', { value: v }, l)));
   const slotSel = el('select', { 'aria-label': 'Jugador' }, el('option', { value: 'all' }, 'Todos los jugadores'),
     m.players.map(p => el('option', { value: p.slot }, `${p.hero} · ${pname(p)} (${tname(p.team)})`)));
   const from = el('input', { 'aria-label': 'Desde el minuto', type: 'number', min: 0, max: st.to, value: 0, style: { width: '64px' } });
   const to = el('input', { 'aria-label': 'Hasta el minuto', type: 'number', min: 0, max: st.to, value: st.to, style: { width: '64px' } });
   const chk = (key, label) => { const c = el('input', { type: 'checkbox', checked: st[key] }); c.addEventListener('change', () => { st[key] = c.checked; draw(); }); return el('label', {}, c, label); };
+  const noObjBox = el('input', { type: 'checkbox' });
+  noObjBox.addEventListener('change', () => { st.noObj = noObjBox.checked; draw(); });
+  const chkNoObj = el('label', {}, noObjBox, 'Exclude objective fights');
   const box = el('div');
   const map = new MapView(box, { size: 820, label: `Minimapa de la partida ${m.match_id}` });
   const counts = el('div', { class: 'muted small' });
-  root.append(el('div', { class: 'row' }, teamSel, slotSel, el('label', {}, 'minuto', from, '–', to), chk('heat', 'calor de posiciones'), chk('deaths', 'muertes ✕'),
+  root.append(el('div', { class: 'row' }, teamSel, slotSel, el('label', {}, 'minuto', from, '–', to), chk('heat', 'calor de posiciones'), chk('deaths', 'muertes ✕'), chkNoObj,
     chk('lanes', 'carriles'), chk('objImgs', 'objetivos'), chk('koth', 'KOTH'), chk('objectives', 'códigos de objetivo'), chk('rotate', 'girar 180°'), el('button', { onclick: () => map.exportPNG(`minimapa_${m.match_id}.png`) }, 'Exportar PNG')),
     legend([[COLORS.t0, tname(0)], [COLORS.t1, tname(1)], [COLORS.neutral, 'muerte (color = equipo de la víctima)', 'x']]), counts, box,
     el('p', { class: 'muted small' }, `Calibración: ${info.calibration?.source || '—'}. Las posiciones con vida 0 (muerto) se descartan.`));
@@ -584,7 +596,14 @@ async function minimapa(root, m, tname) {
       n += pts.length;
       layers.push({ kind: 'heat', points: pts, color: team ? COLORS.t1 : COLORS.t0, radius: 12 });
     }
-    const deaths = m.deaths.filter(d => d.t >= t0 && d.t <= t1 && keep({ team: d.victim_team, slot: d.victim_slot }) && d.x != null);
+    // «sin peleas de objetivo» solo se puede calcular con el demo (si no, el KOTH no se identifica)
+    const fx = m.fights, labels = fx?.koth_known && fx.labels?.length === m.deaths.length ? fx.labels : null;
+    noObjBox.disabled = !labels;
+    noObjBox.title = labels ? '' : 'Needs the match demo: the KOTH cannot be identified without it.';
+    if (!labels) { noObjBox.checked = false; st.noObj = false; }
+    const noObj = st.noObj && labels;
+    const nAll = m.deaths.filter(d => d.t >= t0 && d.t <= t1 && keep({ team: d.victim_team, slot: d.victim_slot }) && d.x != null).length;
+    const deaths = m.deaths.filter((d, i) => d.t >= t0 && d.t <= t1 && keep({ team: d.victim_team, slot: d.victim_slot }) && d.x != null && (!noObj || labels[i] === 'rest'));
     if (st.deaths) layers.push({ kind: 'crosses', points: deaths.map(d => [d.x, d.y, 0, 0, d.victim_team ? COLORS.t1 : COLORS.t0]) });
     if (st.objImgs && info.objective_positions) {
       const items = [];
@@ -604,7 +623,9 @@ async function minimapa(root, m, tname) {
         return [x, y, k.replace(/^team\d_/, '').replace('tier1_', 'G').replace('tier2_', 'W'), k.startsWith('team0') ? COLORS.t0 : COLORS.t1];
       }) });
     }
-    counts.textContent = `${n} posiciones (cada ${step} s) · ${deaths.length} muertes en el rango`;
+    counts.textContent = `${n} posiciones (cada ${step} s) · ${deaths.length} muertes en el rango`
+      + (noObj ? ` (excluded ${nAll - deaths.length} in midboss/KOTH fights)` : '')
+      + (!labels ? ' · "Exclude objective fights" needs the match demo' : '');
     map.setLayers(layers, { rotate: st.rotate });
   }
   await map.ready;

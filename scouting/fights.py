@@ -57,6 +57,14 @@ def _nearest_objective(x, y):
     return "midboss" if d_pit <= d_rift else "koth"
 
 
+def counts(result):
+    """{"midboss", "koth", "rest", "unknown"} -> nº de muertes de cada tipo en un resultado de `classify`."""
+    out = {"midboss": 0, "koth": 0, "rest": 0, "unknown": 0}
+    for e in result["events"]:
+        out[e["fight"]] += 1
+    return out
+
+
 def classify(mi, demo_summary=None):
     """-> {"koth_known": bool, "events": [{**death_event, "fight": ...}]}"""
     koth_known = bool(demo_summary) and demo_summary.get("state") == "done"

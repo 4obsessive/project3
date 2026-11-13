@@ -132,5 +132,102 @@ class RealMatch(unittest.TestCase):
         self.assertEqual(len(r["events"]), len(matches.deaths(self.mi)))
 
 
+class Split(unittest.TestCase):
+    """Reparto en player_stats, informe y payload: mismos números que classify."""
+    MID = 135801973
+
+    @classmethod
+    def setUpClass(cls):
+        with gzip.open(os.path.join(FX, "match_135801973.json.gz"), "rt", encoding="utf-8") as f:
+            cls.mi = json.load(f)["match_info"]
+        with open(os.path.join(FX, "demo_135801973.json"), encoding="utf-8") as f:
+            res = json.load(f)["results"]
+        cls.summ = dict(demo.summarize(res), state="done")
+
+    def test_counts_helper(self):
+        r = fights.classify(self.mi, self.summ)
+        c = fights.counts(r)
+        self.assertEqual(set(c), {"midboss", "koth", "rest", "unknown"})
+        self.assertEqual(sum(c.values()), len(r["events"]))
+
+    def test_player_stats_rest(self):
+        from scouting import playerstats
+        r = fights.classify(self.mi, self.summ)
+        ps = playerstats.player_stats(self.mi, None, fights=r)
+        ev = r["events"]
+        for p in ps:
+            k = [e for e in ev if e["killer_slot"] == p["slot"] and e["killer_team"] != e["victim_team"]]
+            d = [e for e in ev if e["victim_slot"] == p["slot"]]
+            self.assertEqual(p["kills_rest"], sum(1 for e in k if e["fight"] == "rest"))
+            self.assertEqual(p["deaths_rest"], sum(1 for e in d if e["fight"] == "rest"))
+            self.assertEqual(sum(n for _, _, n in p["kill_cells_rest"]) <= p["kills_rest"], True)
+            self.assertEqual(p["fights"]["deaths"]["rest"], p["deaths_rest"])
+            self.assertEqual(sum(p["fights"]["deaths"].values()), len(d))
+            self.assertEqual(sum(p["fights"]["kills"].values()), len(k))
+
+    def test_player_stats_without_koth(self):
+        from scouting import playerstats
+        for fx in (None, fights.classify(self.mi)):
+            for p in playerstats.player_stats(self.mi, None, fights=fx):
+                for k in ("kills_rest", "deaths_rest", "kill_cells_rest", "death_cells_rest"):
+                    self.assertIsNone(p[k])
+
+    def test_payload_has_fights(self):
+        import tempfile
+        from scouting import db, server
+        with tempfile.TemporaryDirectory() as tmp:
+            con = db.connect(os.path.join(tmp, "t.db"))
+            out = server.match_payload_extras(con, self.MID, self.mi)
+            con.close()
+        self.assertEqual(out["fights"]["koth_known"], False)
+        self.assertEqual(out["fights"]["counts"], fights.counts(fights.classify(self.mi)))
+        self.assertEqual(len(out["fights"]["labels"]), len(matches.deaths(self.mi)))
+
+
+class ReportSplit(unittest.TestCase):
+    MID = 135801973
+
+    @classmethod
+    def setUpClass(cls):
+        Split.setUpClass.__func__(cls)
+        cls.roster = {p["account_id"] for p in cls.mi["players"] if p["team"] == 1}
+
+    def run_report(self, with_demo=True, mis=None):
+        from scouting import report
+        datas = [{"match_info": cls_mi} for cls_mi in (mis or [self.mi])]
+        sm = {self.MID: self.summ} if with_demo else {}
+        out = report.run("T", datas, self.roster, side_overrides={self.MID: 1}, demo_summaries=sm)
+        return {s["id"]: s for s in out["sections"]}
+
+    def test_m02_totals_match_classify(self):
+        sec = self.run_report()["mapa"]
+        self.assertNotIn("error", sec)
+        c = fights.counts(fights.classify(self.mi, self.summ))
+        tb = next(b for b in sec["blocks"] if b.get("kind") == "fight_split")
+        rows = {r["tipo"]: r for r in tb["rows"]}
+        for k in ("midboss", "koth", "rest", "unknown"):
+            self.assertEqual(rows[k]["kills"] + rows[k]["deaths"], c[k], k)
+        mp = next(b for b in sec["blocks"] if b.get("kind") == "rest_map")
+        pts = sum(len(l["points"]) for l in mp["layers"])
+        self.assertEqual(pts, c["rest"])
+
+    def test_m02_excludes_match_without_demo(self):
+        sec = self.run_report(with_demo=False)["mapa"]
+        txt = [b["text"] for b in sec["blocks"] if b.get("kind") == "fight_excluded"]
+        self.assertEqual(len(txt), 1)
+        self.assertIn("1 of 1 matches excluded", txt[0])
+        self.assertFalse(any(b.get("kind") in ("fight_split", "rest_map") for b in sec["blocks"]))
+
+    def test_m08_rest_per_player(self):
+        from scouting import playerstats
+        sec = self.run_report()["jugadores"]
+        tb = next(b for b in sec["blocks"] if b.get("kind") == "jugadores")
+        ps = {p["account_id"]: p for p in playerstats.player_stats(self.mi, None, fights=fights.classify(self.mi, self.summ))}
+        for r in tb["rows"]:
+            p = ps[r["account_id"]]
+            self.assertEqual(r["kills_rest"], p["kills_rest"])
+            self.assertEqual(r["deaths_rest"], p["deaths_rest"])
+
+
 if __name__ == "__main__":
     unittest.main()

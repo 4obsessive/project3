@@ -60,6 +60,7 @@ class MatchCtx:
         self._calibration = calibration
         self._lane_phase = None
         self._player_stats = None
+        self._fights = None
 
     @property
     def demo(self):
@@ -81,8 +82,16 @@ class MatchCtx:
     def player_stats(self):
         if self._player_stats is None:
             from .. import playerstats
-            self._player_stats = playerstats.player_stats(self.mi, self.lane_phase, cal=self._calibration)
+            self._player_stats = playerstats.player_stats(self.mi, self.lane_phase, cal=self._calibration, fights=self.fights)
         return self._player_stats
+
+    @property
+    def fights(self):
+        """Clasificación de muertes (midboss / KOTH / resto), la misma que usa la vista de partida."""
+        if self._fights is None:
+            from .. import fights
+            self._fights = fights.classify(self.mi, self.demo)
+        return self._fights
 
     @property
     def deaths(self):

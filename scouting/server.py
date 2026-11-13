@@ -12,7 +12,7 @@ import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import analysis, config, db, demo, images, lanephase, matches, minimap, playerstats, players, report, summary, updater as updater_mod
+from . import analysis, config, db, demo, fights, images, lanephase, matches, minimap, playerstats, players, report, summary, updater as updater_mod
 from .api import ApiError
 from .db import kv_get
 from .ids import to_account_id
@@ -54,10 +54,13 @@ def match_payload_extras(con, mid, mi):
         ld = demo.lane_data(con, int(mid))
         lp = lanephase.lane_phase(mi, ld["rows"] if ld else None, ld["rules"] if ld else None,
                                   tick_limit=ld.get("limit") if ld else None)
-        return {"lane_phase": lp, "player_stats": playerstats.player_stats(mi, lp)}
+        fx = fights.classify(mi, demo.summary(con, int(mid)) if con is not None else None)
+        return {"lane_phase": lp, "player_stats": playerstats.player_stats(mi, lp, fights=fx),
+                "fights": {"koth_known": fx["koth_known"], "counts": fights.counts(fx),
+                           "labels": [e["fight"] for e in fx["events"]]}}
     except Exception:
         traceback.print_exc()
-        return {"lane_phase": None, "player_stats": None}
+        return {"lane_phase": None, "player_stats": None, "fights": None}
 
 
 def _qint(req, name, default):

@@ -343,7 +343,7 @@ class Worker(unittest.TestCase):
         self.assertTrue(any(m == "GET" and p.match("/api/matches/109084310/demo") for m, p, _ in app.routes))
         with mock.patch.object(matches, "load", return_value=data):
             out = app.match_demo(None, "109084310")
-            self.assertEqual(set(out), {"demo", "comeback", "lane_phase", "player_stats"})
+            self.assertEqual(set(out), {"demo", "comeback", "lane_phase", "player_stats", "fights"})
             self.assertEqual(out["demo"]["state"], "pending")
             self.assertIsNone(out["comeback"])
             with self.con:
