@@ -543,13 +543,17 @@ class App:
         mids = [d["match_info"]["match_id"] for d in datas]
         lane_data = {mid: demo.lane_data(con, mid) for mid in mids}
         player_ids = {}
-        for d in datas:
-            for p in d["match_info"].get("players") or []:
-                aid = p.get("account_id")
-                if aid in roster and aid not in player_ids:
-                    r = con.execute("SELECT p.id, p.display_name FROM accounts a JOIN players p ON p.id=a.player_id WHERE a.account_id=?", (aid,)).fetchone()
-                    if r:
-                        player_ids[aid] = {"player_id": r[0], "name": r[1]}
+        roster_here = {p.get("account_id") for d in datas for p in d["match_info"].get("players") or [] if p.get("account_id") in roster}
+        try:  # nombres de Steam (caché de 7 días), como en la vista de partida
+            updater_mod.fetch_steam_profiles(con, self.client, sorted(roster_here))
+        except Exception as e:
+            print(f"[api] sin perfiles de Steam para el informe: {e}")
+        for aid in roster_here:
+            r = con.execute("SELECT p.id pid, COALESCE(p.display_name, a.steam_name) n FROM accounts a JOIN players p ON p.id=a.player_id WHERE a.account_id=?", (aid,)).fetchone()
+            sp = con.execute("SELECT personaname FROM steam_profiles WHERE account_id=?", (aid,)).fetchone()
+            name = (r["n"] if r and r["n"] else None) or (sp["personaname"] if sp and sp["personaname"] else None)
+            if r or name:
+                player_ids[aid] = {"player_id": r["pid"] if r else None, "name": name}
         out = report.run(team or "Plantilla manual", datas, roster, body.get("side_overrides"), body.get("params"), demo_summaries,
                          lane_data=lane_data, player_ids=player_ids, hero_names=self._hero_names())
         out["load_errors"] = errors

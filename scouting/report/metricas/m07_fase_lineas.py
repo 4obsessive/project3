@@ -11,8 +11,8 @@ def _mean(v):
     return sum(v) / len(v) if v else None
 
 
-def _min(t):
-    return None if t is None else round(t / 60, 1)
+def _sec(t):
+    return None if t is None else int(round(t))
 
 
 def _int(x):
@@ -71,18 +71,18 @@ def fase_lineas(ctx):
             rows.append({"carril_id": lane, "duo": " + ".join(ctx.hero(h) for h in heroes) or "–", "n": n, "n_demo": len(dm),
                          "dmg_done": _int(_mean([e["dmg_done"] for e in dm])), "dmg_taken": _int(_mean([e["dmg_taken"] for e in dm])),
                          "dmg_taken_gank": _int(_mean([e["dmg_taken_gank"] for e in dm])),
-                         "g_taken": _min(_mean(gt)), "g_taken_no": _no_cae(gt, n),
-                         "g_lost": _min(_mean(gl)), "g_lost_no": _no_cae(gl, n)})
+                         "g_taken": _sec(_mean(gt)), "g_taken_no": _no_cae(gt, n),
+                         "g_lost": _sec(_mean(gl)), "g_lost_no": _no_cae(gl, n)})
         rows.sort(key=lambda r: (r["dmg_done"] is None, -(r["dmg_done"] or 0), -r["n"]))
         blocks.append({"type": "table", "kind": "duos", "title": f"Dúos propios en {ln(lane)}", "n": len(lane_m[lane]),
                        "note": "Dúo = pareja de héroes sin orden. Daño medio por dúo en los 10 primeros minutos (solo partidas con demo). "
-                               "Guardian: minuto medio de la caída; el que no cae no entra en la media.",
+                               "Guardian: momento medio de su caída en toda la partida (no solo en la fase de líneas); el que no cae no entra en la media.",
                        "columns": [{"key": "carril_id", "label": "Línea", "fmt": "lane"}, {"key": "duo", "label": "Dúo"},
                                    {"key": "n", "label": "Partidas"}, {"key": "n_demo", "label": "Con demo"},
                                    {"key": "dmg_done", "label": "Daño hecho"}, {"key": "dmg_taken", "label": "Daño recibido"},
                                    {"key": "dmg_taken_gank", "label": "Recibido de gankeos"},
-                                   {"key": "g_taken", "label": "Guardian rival cae (min)"}, {"key": "g_taken_no", "label": "Rival no cae en"},
-                                   {"key": "g_lost", "label": "Guardian propio cae (min)"}, {"key": "g_lost_no", "label": "Propio no cae en"}],
+                                   {"key": "g_taken", "label": "Guardian rival cae", "fmt": "mmss"}, {"key": "g_taken_no", "label": "Rival no cae en"},
+                                   {"key": "g_lost", "label": "Guardian propio cae", "fmt": "mmss"}, {"key": "g_lost_no", "label": "Propio no cae en"}],
                        "rows": rows})
     # primer gankeo por línea
     grows = []
@@ -97,20 +97,20 @@ def fase_lineas(ctx):
                 mad.append(g["t"])
                 mad_h[hero_of.get(g["attacker_slot"])] += 1
         N = len(lane_m[lane])
-        grows.append({"carril_id": lane, "n": N, "suf_n": len(suf), "suf_mean": _min(_mean(suf)), "suf_min": _min(min(suf)) if suf else None,
-                      "suf_heroes": _top(suf_h, ctx), "made_n": len(mad), "made_mean": _min(_mean(mad)),
-                      "made_min": _min(min(mad)) if mad else None, "made_heroes": _top(mad_h, ctx)})
+        grows.append({"carril_id": lane, "n": N, "suf_n": len(suf), "suf_mean": _sec(_mean(suf)), "suf_min": min(suf) if suf else None,
+                      "suf_heroes": _top(suf_h, ctx), "made_n": len(mad), "made_mean": _sec(_mean(mad)),
+                      "made_min": min(mad) if mad else None, "made_heroes": _top(mad_h, ctx)})
         if N >= 3 and len(suf) / N >= 0.5:
             ctx.finding("weakness", f"Sufren un gankeo en {ln(lane)} (primero, tras el min 1) en {len(suf)} de {N} partidas.", len(suf), N)
         if N >= 3 and len(mad) / N >= 0.5:
             ctx.finding("strength", f"Gankean en {ln(lane)} (primero, tras el min 1) en {len(mad)} de {N} partidas.", len(mad), N)
     blocks.append({"type": "table", "kind": "ganks", "title": "Primer gankeo por línea", "n": valid,
-                   "note": "Gankeo = daño o kill sobre un jugador de otra línea tras el min 1. Minutos medio y mínimo de las partidas en que ocurre; "
+                   "note": "Gankeo = daño o kill sobre un jugador de otra línea tras el min 1. Momento medio y mínimo de las partidas en que ocurre; "
                            "los héroes son los que lo hacen más veces.",
                    "columns": [{"key": "carril_id", "label": "Línea", "fmt": "lane"}, {"key": "n", "label": "Partidas"},
-                               {"key": "suf_n", "label": "Lo sufren (partidas)"}, {"key": "suf_mean", "label": "Min medio"}, {"key": "suf_min", "label": "Min mínimo"},
+                               {"key": "suf_n", "label": "Lo sufren (partidas)"}, {"key": "suf_mean", "label": "Momento medio", "fmt": "mmss"}, {"key": "suf_min", "label": "Momento mínimo", "fmt": "mmss"},
                                {"key": "suf_heroes", "label": "Rivales que más gankean"},
-                               {"key": "made_n", "label": "Lo hacen (partidas)"}, {"key": "made_mean", "label": "Min medio"}, {"key": "made_min", "label": "Min mínimo"},
+                               {"key": "made_n", "label": "Lo hacen (partidas)"}, {"key": "made_mean", "label": "Momento medio", "fmt": "mmss"}, {"key": "made_min", "label": "Momento mínimo", "fmt": "mmss"},
                                {"key": "made_heroes", "label": "Propios que más gankean"}],
                    "rows": grows})
     return blocks

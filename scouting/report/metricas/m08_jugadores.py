@@ -26,7 +26,7 @@ def jugadores(ctx):
             if p["team"] != m.our:
                 continue
             ident = ctx.player_ids.get(p["account_id"])
-            key = ("p", ident["player_id"]) if ident else ("a", p["account_id"])
+            key = ("p", ident["player_id"]) if ident and ident.get("player_id") is not None else ("a", p["account_id"])
             a = acc.setdefault(key, {"account_id": p["account_id"], "name": (ident or {}).get("name") or f"Cuenta {p['account_id']}",
                                       "items": [], "heroes": Counter(), "lanes": Counter(), "kc": Counter(), "dc": Counter()})
             a["items"].append((p, demo))

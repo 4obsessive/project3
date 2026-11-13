@@ -376,6 +376,43 @@ class ReportLanes(unittest.TestCase):
         for r in tb["rows"]:
             self.assertEqual(r["lane_dmg_done"], ps[r["account_id"]]["lane_dmg_done"])
 
+    def test_times_in_seconds_with_mmss(self):
+        t = next(b for b in self.sec["fase_lineas"]["blocks"] if b.get("kind") == "duos")
+        cols = {c["key"]: c for c in t["columns"]}
+        self.assertEqual(cols["g_taken"]["fmt"], "mmss")
+        r = t["rows"][0]
+        ref = self.lp["lanes"][str(r["carril_id"])]["1"]
+        self.assertEqual(r["g_taken"], ref["guardian_taken_t"])
+        self.assertEqual(r["g_lost"], ref["guardian_lost_t"])
+
+    def test_guardian_not_fallen_excluded_and_counted(self):
+        from scouting import report
+        mi = copy.deepcopy(self.mi)
+        for o in mi["objectives"]:
+            o["destroyed_time_s"] = 0
+        out = report.run("T", [{"match_info": mi}], self.roster, None, None, None, lane_data=self.ld)
+        sec = {s["id"]: s for s in out["sections"]}
+        t = next(b for b in sec["fase_lineas"]["blocks"] if b.get("kind") == "duos")
+        r = t["rows"][0]
+        self.assertIn(r["g_taken"] is None or r["g_lost"] is None, (True,))
+        self.assertTrue(r["g_taken_no"] == "1 de 1" or r["g_lost_no"] == "1 de 1")
+
+    def test_names_and_heroes_populated(self):
+        from scouting import report
+        acc = sorted(self.roster)
+        ids = {acc[0]: {"player_id": 7, "name": "Ana"}, acc[1]: {"player_id": None, "name": "Steam Bob"}}
+        out = report.run("T", [self.data], self.roster, None, None, None, lane_data=self.ld, player_ids=ids,
+                         hero_names={h: f"H{h}" for h in range(1, 200)})
+        sec = {s["id"]: s for s in out["sections"]}
+        rows = next(b for b in sec["jugadores"]["blocks"] if b.get("kind") == "jugadores")["rows"]
+        names = {r["account_id"]: r["jugador"] for r in rows}
+        self.assertEqual(len(rows), 6)
+        self.assertEqual(names[acc[0]], "Ana")
+        self.assertEqual(names[acc[1]], "Steam Bob")
+        self.assertEqual(names[acc[2]], f"Cuenta {acc[2]}")
+        duo = next(b for b in sec["fase_lineas"]["blocks"] if b.get("kind") == "duos")["rows"][0]["duo"]
+        self.assertTrue(duo.startswith("H"))
+
     def test_without_demo_damage_unavailable(self):
         from scouting import report
         out = report.run("T", [self.data], self.roster)
