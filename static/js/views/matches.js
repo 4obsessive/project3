@@ -73,6 +73,8 @@ async function showMatch(root, id, ctx) {
     'Resumen': () => resumen(body, m, tname, ctx),
     'Objetivos': () => objetivos(body, m, tname),
     'Midboss': () => midboss(body, m, tname),
+    'Fase de líneas': () => faseLineas(body, m, tname),
+    'Jugadores': () => jugadores(body, m, tname),
     'Economía': () => economia(body, m, tname),
     'Minimapa': () => minimapa(body, m, tname),
     'Explorador': () => renderExplorer(body, m.match_id),
@@ -111,12 +113,16 @@ async function showMatch(root, id, ctx) {
 let heroById = new Map();
 let demoTimer = null;
 let matchGen = 0;
-const DEMO_TABS = new Set(['Objetivos', 'Midboss']);
+const DEMO_TABS = new Set(['Objetivos', 'Midboss', 'Fase de líneas', 'Jugadores']);
+const LANE_POLLS = 15; // con el demo listo pero sin datos de líneas: como mucho 15 consultas (5 min)
 /** Mientras el demo está pendiente, consulta en segundo plano /api/matches/{id}/demo cada 20 s (sin repintar);
  *  cuando deja de estar pendiente actualiza m.demo/m.comeback y llama a onReady. Se detiene al salir de la partida. */
-function scheduleDemoRefresh(root, id, gen, m, onReady) {
+function scheduleDemoRefresh(root, id, gen, m, onReady, tries = 0) {
   clearTimeout(demoTimer); demoTimer = null;
-  if (m.demo?.state !== 'pending') return;
+  const pending = m.demo?.state === 'pending';
+  // con el demo listo pero sin el relleno de la fase de líneas se sigue consultando un tiempo limitado
+  const needLane = m.demo?.state === 'done' && m.lane_phase?.source !== 'demo' && tries < LANE_POLLS;
+  if (!pending && !needLane) return;
   const still = () => gen === matchGen && root.isConnected
     && location.hash.slice(1).split(/[/?]/)[0] === 'partidas' && location.hash.slice(1).split(/[/?]/)[1] === String(id);
   demoTimer = setTimeout(async () => {
@@ -125,12 +131,13 @@ function scheduleDemoRefresh(root, id, gen, m, onReady) {
     let r = null;
     try { r = await api.get(`/api/matches/${id}/demo`); } catch { /* fallo de red: se reintenta en el siguiente ciclo */ }
     if (!still()) return;
-    if (r && r.demo?.state !== 'pending') {
+    if (r) {
+      const changed = r.demo?.state !== m.demo?.state || r.lane_phase?.source !== m.lane_phase?.source;
       m.demo = r.demo; m.comeback = r.comeback;
-      onReady();
-      return;
+      if (r.lane_phase !== undefined) { m.lane_phase = r.lane_phase; m.player_stats = r.player_stats; }
+      if (changed) onReady();
     }
-    scheduleDemoRefresh(root, id, gen, m, onReady);
+    scheduleDemoRefresh(root, id, gen, m, onReady, tries + 1);
   }, 20000);
 }
 /** Retrato del héroe de un jugador de la partida (con los datos de /api/heroes si hay). */
@@ -391,6 +398,109 @@ function midboss(root, m, tname) {
     dmgBar(e.damage, tname),
     e.initiator != null ? el('div', { class: 'small' }, 'Iniciado por ', teamTag(e.initiator, tname)) : null,
     e.stolen != null ? el('div', { class: 'small' }, 'Robado: ', e.stolen ? 'sí' : 'no') : null))));
+}
+
+const LANE_UNAVAILABLE = 'No disponible: las posiciones no permiten saber la línea de cada jugador.';
+const srcLabel = lp => lp?.source === 'demo' ? 'demo' : lp?.source === 'aprox' ? 'aprox., sin demo' : 'sin datos';
+const srcNote = lp => el('p', { class: 'muted small' }, 'Fuente: ', el('b', {}, srcLabel(lp)),
+  lp?.source === 'aprox' ? ' · el reparto del daño (línea/gankeo) y los gankeos necesitan el demo; el resto se aproxima con las estadísticas de la partida.' : '');
+const minOf = t => t == null ? null : fmt.mmss(t);
+
+/** Dos barras (hecho / recibido) con escala común. */
+function dmgPair(done, taken, max) {
+  const bar = (v, cls, lbl) => el('div', { class: 'lp-bar' }, el('span', { class: 'lbl' }, lbl),
+    el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { class: cls, style: { width: (v == null ? 0 : 100 * v / max) + '%' } })),
+    el('span', { class: 'v' }, v == null ? '–' : fmt.int(v)));
+  return el('div', { class: 'lp-bars' }, bar(done, 'done', 'Hecho'), bar(taken, 'taken', 'Recibido'));
+}
+
+function faseLineas(root, m, tname) {
+  const lp = m.lane_phase;
+  if (!lp) { root.append(el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), 'no se pudo calcular la fase de líneas de esta partida.')); return; }
+  root.append(srcNote(lp));
+  if (!lp.valid) { root.append(el('div', { class: 'unavailable block' }, LANE_UNAVAILABLE)); return; }
+  const byslot = new Map(m.players.map(p => [p.slot, p]));
+  const hname = s => byslot.get(s)?.hero || `#${s}`;
+  const laneIds = Object.keys(lp.lanes).map(Number).sort((a, b) => a - b);
+  const all = laneIds.flatMap(l => Object.values(lp.lanes[String(l)]));
+  const max = Math.max(1, ...all.flatMap(c => [c.dmg_done || 0, c.dmg_taken || 0]));
+  const gank = g => {
+    if (!g) return el('span', { class: 'muted' }, 'ninguno');
+    return el('span', {}, `${minOf(g.t)} · `, el('b', {}, hname(g.attacker_slot)), ' gankea a ', el('b', {}, hname(g.victim_slot)), g.kind === 'kill' ? ' (kill)' : ' (daño)');
+  };
+  const num = v => v == null ? el('span', { class: 'muted' }, '–') : el('b', {}, fmt.int(v));
+  const guard = t => t == null ? el('span', { class: 'muted' }, 'no cayó') : el('b', {}, minOf(t));
+  const card = (lane, t) => {
+    const c = lp.lanes[String(lane)][String(t)];
+    if (!c) return el('div', { class: `team-card t${t}` }, el('h4', {}, el('span', { class: `tag t${t}` }, tname(t))), el('p', { class: 'muted small' }, 'Sin datos.'));
+    return el('div', { class: `team-card t${t} lp-card` },
+      el('h4', {}, el('span', { class: `tag t${t}` }, tname(t))),
+      el('div', { class: 'lp-duo' }, (c.slots || []).map(sl => { const p = byslot.get(sl); return p ? el('span', { class: 'lp-hero' }, portrait(p, { size: 'sm', shape: 'round' }), el('span', {}, p.hero)) : null; })),
+      dmgPair(c.dmg_done, c.dmg_taken, max),
+      el('dl', { class: 'lp-facts' },
+        el('dt', {}, 'Daño hecho en la línea'), el('dd', {}, num(c.dmg_done_lane)),
+        el('dt', {}, 'Daño recibido en la línea'), el('dd', {}, num(c.dmg_taken_lane)),
+        el('dt', {}, 'Daño recibido por gankeo'), el('dd', {}, num(c.dmg_taken_gank)),
+        el('dt', {}, 'Guardian rival tirado'), el('dd', {}, guard(c.guardian_taken_t)),
+        el('dt', {}, 'Guardian propio perdido'), el('dd', {}, guard(c.guardian_lost_t)),
+        el('dt', {}, 'Kills / muertes'), el('dd', {}, el('b', {}, `${c.kills ?? '–'} / ${c.deaths ?? '–'}`)),
+        el('dt', {}, 'Primer gankeo hecho'), el('dd', {}, gank(c.first_gank_made)),
+        el('dt', {}, 'Primer gankeo sufrido'), el('dd', {}, gank(c.first_gank_suffered))));
+  };
+  for (const l of laneIds) root.append(el('section', { class: 'lp-lane' }, el('h3', {}, laneChip(l, m.lanes)), el('div', { class: 'grid2' }, card(l, 0), card(l, 1))));
+  root.append(el('p', { class: 'muted small' }, 'Las líneas se asignan por la posición de cada jugador, no por el lado del mapa. «–» = sin dato.'));
+}
+
+function jugadores(root, m, tname) {
+  const ps = m.player_stats, lp = m.lane_phase;
+  if (!ps || !ps.length) { root.append(el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), 'no se pudo calcular el desglose por jugador de esta partida.')); return; }
+  const byslot = new Map(m.players.map(p => [p.slot, p]));
+  const rows = ps.map(r => ({ ...r, pl: byslot.get(r.slot), hero: byslot.get(r.slot)?.hero || `#${r.slot}`, pname: byslot.get(r.slot) ? pname(byslot.get(r.slot)) : '' }));
+  const detail = el('div', { class: 'pj-detail' });
+  let sel = null;
+  root.append(srcNote(lp), el('p', { class: 'muted small' }, 'Elige un jugador (clic en su fila o en el selector) para ver dónde mató y dónde murió, y sus almas por fuente.'));
+  const laneCell = r => r.lane == null ? el('span', { class: 'muted' }, '–') : laneChip(r.lane, m.lanes);
+  const cols = [
+    { key: 'hero', label: 'Héroe', render: r => el('span', { class: 'hero-cell' }, r.pl ? portrait(r.pl, { size: 'sm', shape: 'round' }) : null, r.hero) },
+    { key: 'pname', label: 'Jugador' },
+    { key: 'team', label: 'Equipo', render: r => teamTag(r.team, tname) },
+    { key: 'lane', label: 'Línea', render: laneCell, sort: r => r.lane ?? 99 },
+    { key: 'kda', label: 'KDA', render: r => `${r.kills}/${r.deaths}/${r.assists}` + (r.kda != null ? ` (${fmt.dec(r.kda, 1)})` : ''), sort: r => r.kda ?? -1 },
+    { key: 'troopers_per_min', label: 'Troopers/min', fmt: '1' }, { key: 'jungla_per_min', label: 'Jungla/min', fmt: '1' },
+    { key: 'nw_per_min', label: 'NW/min', fmt: 'int' }, { key: 'nw_at_600', label: "NW a los 10'", fmt: 'int' },
+    { key: 'player_damage', label: 'Daño', fmt: 'int' },
+    { key: 'lane_dmg_done', label: 'Daño en líneas', fmt: 'int' }, { key: 'lane_dmg_taken', label: 'Recibido en líneas', fmt: 'int' },
+    { key: 'ganks_made', label: 'Gankeos', fmt: 'int' }, { key: 'ganks_suffered', label: 'Gankeos sufridos', fmt: 'int' },
+  ];
+  const picker = el('select', { 'aria-label': 'Jugador' }, el('option', { value: '' }, 'Elige un jugador…'),
+    rows.map(r => el('option', { value: String(r.slot) }, `${r.hero} · ${r.pname || '—'} (${tname(r.team)})`)));
+  picker.addEventListener('change', () => { sel = picker.value === '' ? null : rows.find(r => String(r.slot) === picker.value); showPlayer(); });
+  root.append(el('div', { class: 'row' }, picker), dataTable(cols, rows, { sortKey: 'team', asc: true, onRowClick: r => { sel = r; picker.value = String(r.slot); showPlayer(); } }), detail);
+
+  function cellMap(title, cells, team, color) {
+    const G = 8;
+    const box = el('div');
+    const map = new MapView(box, { size: 380, grid: G, label: title });
+    // equipo 1: las celdas vienen giradas (base propia abajo); se deshace el giro y se gira el mapa entero
+    const cs = team === 1 ? cells.map(([c, r, n]) => [G - 1 - c, G - 1 - r, n]) : cells;
+    map.ready.then(() => map.setLayers(cs.length ? [{ kind: 'cells', cells: cs, color, labels: true }] : [], { rotate: team === 1, grid: G }));
+    return el('div', { class: 'pj-map' }, el('h4', {}, `${title} (${cells.reduce((a, c) => a + c[2], 0)})`), box,
+      cells.length ? null : el('p', { class: 'muted small' }, 'Ninguna con posición.'));
+  }
+  function showPlayer() {
+    detail.innerHTML = '';
+    if (!sel) return;
+    const color = sel.team === 1 ? COLORS.t1 : COLORS.t0;
+    const names = m.economy?.source_names || {};
+    const src = sel.sources;
+    detail.append(el('h3', {}, sel.pl ? portrait(sel.pl, { size: 'sm', shape: 'round' }) : null, ` ${sel.hero} · ${sel.pname || '—'} `, laneCell(sel)),
+      el('p', { class: 'muted small' }, 'Mapas con la base propia abajo. Kills = lugar donde murió el rival; muertes = lugar de la muerte propia.'),
+      el('div', { class: 'grid2' }, cellMap('Kills', sel.kill_cells || [], sel.team, color), cellMap('Muertes', sel.death_cells || [], sel.team, color)),
+      el('h4', {}, 'Almas por fuente'),
+      src && Object.keys(src).length ? dataTable([{ key: 'src', label: 'Fuente' }, { key: 'v', label: 'Almas', fmt: 'int' }],
+        Object.entries(src).map(([k, v]) => ({ src: names[k] || `Fuente ${k}`, v })), { sortKey: 'v' })
+        : el('p', { class: 'muted small' }, 'No disponible: la partida no trae almas por fuente de este jugador.'));
+  }
 }
 
 const ECO_COLS = [['troopers_kills', 'Troopers/min'], ['jungla_kills', 'Jungla/min'], ['net_worth', 'Net worth/min']];

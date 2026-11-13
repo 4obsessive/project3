@@ -1054,3 +1054,19 @@ nav.toc { display: block; overflow: visible; width: auto; }
   .table-map-tbl { overflow: visible; }
   .table-map { break-inside: avoid; }
 }
+
+/* Partida: fase de líneas y jugadores */
+.lp-lane { margin: 14px 0; }
+.lp-duo { display: flex; gap: 14px; flex-wrap: wrap; margin: 6px 0; }
+.lp-hero { display: inline-flex; align-items: center; gap: 6px; }
+.lp-bars { display: grid; gap: 4px; margin: 8px 0; }
+.lp-bar { display: grid; grid-template-columns: 70px 1fr 64px; gap: 8px; align-items: center; font-size: var(--fs-sm); }
+.lp-bar .lbl { color: var(--muted); }
+.lp-bar .bar { display: block; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.lp-bar .bar span { display: block; height: 100%; }
+.lp-bar .bar .done { background: var(--ok); } .lp-bar .bar .taken { background: var(--bad); }
+.lp-bar .v { text-align: right; font-variant-numeric: tabular-nums; }
+.lp-facts { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; margin: 8px 0 0; font-size: var(--fs-sm); }
+.lp-facts dt { color: var(--muted); } .lp-facts dd { margin: 0; text-align: right; }
+.pj-detail { margin-top: 14px; }
+.pj-map { min-width: 0; }

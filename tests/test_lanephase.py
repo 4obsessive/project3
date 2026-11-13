@@ -309,5 +309,29 @@ class PlayerStats(unittest.TestCase):
         json.dumps(self.res)
 
 
+class PayloadExtras(unittest.TestCase):
+    def test_match_payload_has_lane_phase_and_players(self):
+        import tempfile
+        from scouting import db, server
+        mi = _mi()
+        with tempfile.TemporaryDirectory() as tmp:
+            con = db.connect(os.path.join(tmp, "t.db"))
+            try:
+                sin = server.match_payload_extras(con, 135801973, mi)
+                self.assertEqual(sin["lane_phase"]["source"], "aprox")
+                raw = _load("demo_135801973.json")["results"]
+                raw["lane_damage"] = _load("demo_lane_135801973.json")["rows"]
+                con.execute("INSERT INTO demo_jobs (match_id, state, raw) VALUES (?, 'done', ?)", (135801973, json.dumps(raw)))
+                con.commit()
+                out = server.match_payload_extras(con, 135801973, mi)
+            finally:
+                con.close()
+        self.assertTrue(out["lane_phase"]["valid"])
+        self.assertEqual(out["lane_phase"]["source"], "demo")
+        self.assertEqual(len(out["player_stats"]), 12)
+        self.assertEqual(len(out["lane_phase"]["players"]), 12)
+        json.dumps(out)
+
+
 if __name__ == "__main__":
     unittest.main()

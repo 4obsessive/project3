@@ -12,7 +12,7 @@ import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import analysis, config, db, demo, images, matches, minimap, players, report, summary, updater as updater_mod
+from . import analysis, config, db, demo, images, lanephase, matches, minimap, playerstats, players, report, summary, updater as updater_mod
 from .api import ApiError
 from .db import kv_get
 from .ids import to_account_id
@@ -45,6 +45,18 @@ def _api_image_path(url):
 
 def _wiki_hero_file(name):
     return name.replace("&", "%26").replace(" ", "_") + "_vertical.png"
+
+
+def match_payload_extras(con, mid, mi):
+    """Fase de líneas y desglose por jugador de la partida (con los datos crudos del demo si existen).
+    Si el cálculo falla devuelve None en cada uno: la vista lo muestra como no disponible."""
+    try:
+        ld = demo.lane_data(con, int(mid))
+        lp = lanephase.lane_phase(mi, ld["rows"] if ld else None, ld["rules"] if ld else None)
+        return {"lane_phase": lp, "player_stats": playerstats.player_stats(mi, lp)}
+    except Exception:
+        traceback.print_exc()
+        return {"lane_phase": None, "player_stats": None}
 
 
 def _qint(req, name, default):
@@ -384,7 +396,9 @@ class App:
     @staticmethod
     def _demo_of(con, mid, mi):
         dm = demo.summary(con, int(mid))
-        return {"demo": dm, "comeback": matches.comeback_flags(mi, dm)}
+        out = {"demo": dm, "comeback": matches.comeback_flags(mi, dm)}
+        out.update(match_payload_extras(con, mid, mi))
+        return out
 
     def match_demo(self, req, mid):
         """Solo el demo y las banderas de remontada: la vista lo sondea mientras está pendiente."""
