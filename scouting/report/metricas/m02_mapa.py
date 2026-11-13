@@ -2,6 +2,7 @@
 from collections import defaultdict
 
 from .. import GRID, cell_name, cell_of, metric
+from ... import fights
 from ...minimap import load_calibration
 
 
@@ -133,7 +134,9 @@ def _sin_objetivos(ctx, normalize, incl, excl, split, rk_pts, rd_pts, rcell_k, r
     tot = [sum(v[i] for v in split.values()) for i in (0, 1)]
     rows.append({"tipo": "total", "label": "Total", "kills": tot[0], "deaths": tot[1], "total": sum(tot)})
     out.append({"type": "table", "kind": "fight_split", "title": f"Kills and deaths by fight type ({incl} matches with demo)", "n": incl,
-                "note": "Kill = place where the rival died; midboss within 2500 units of the pit, KOTH within 2000 of a rift (see Decisions in the spec).",
+                "note": (f"Midboss fight: a death within {fights.MIDBOSS_RADIUS} units of the pit between the first damage to the midboss and {fights.AFTER_S} s after it dies. "
+                         f"KOTH fight: a death within {fights.RIFT_RADIUS} units of either rift between the cash-in start and {fights.AFTER_S} s after it ends. "
+                         "Kill = place where the rival died."),
                 "columns": [{"key": "label", "label": "Fight type"}, {"key": "kills", "label": "Kills"},
                             {"key": "deaths", "label": "Deaths"}, {"key": "total", "label": "Total"}],
                 "rows": rows})

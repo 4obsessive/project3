@@ -56,23 +56,23 @@ def jugadores(ctx):
                      "troopers_per_min": _mean([p["troopers_per_min"] for p in its], 2), "jungla_per_min": _mean([p["jungla_per_min"] for p in its], 2),
                      "nw_per_min": _mean([p["nw_per_min"] for p in its], 0), "nw_at_600": _mean([p["nw_at_600"] for p in its], 0),
                      "n_demo": len(dm),
-                     "n_rest": len(rs), "kills_rest": sum(p["kills_rest"] for p in rs) if rs else None,
-                     "deaths_rest": sum(p["deaths_rest"] for p in rs) if rs else None,
+                     "n_rest": len(rs), "kills_rest": _mean([p["kills_rest"] for p in rs]),
+                     "deaths_rest": _mean([p["deaths_rest"] for p in rs]),
                      "lane_dmg_done": _mean([p["lane_dmg_done"] for p in dm], 0), "lane_dmg_taken": _mean([p["lane_dmg_taken"] for p in dm], 0),
                      "lane_kills": _mean([p["lane_kills"] for p in its]), "lane_deaths": _mean([p["lane_deaths"] for p in its]),
                      "ganks_made": _mean([p["ganks_made"] for p in dm]), "ganks_suffered": _mean([p["ganks_suffered"] for p in dm])})
     cols = [("jugador", "Jugador"), ("n", "Partidas"), ("heroes", "Héroes"), ("lineas", "Líneas"), ("kills", "Kills"), ("deaths", "Muertes"),
             ("assists", "Asist."), ("kda", "KDA medio"), ("troopers_per_min", "Tropas/min"), ("jungla_per_min", "Jungla/min"),
             ("nw_per_min", "Net worth/min"), ("nw_at_600", "NW a los 10"), ("n_demo", "Con demo"),
-            ("n_rest", "Matches with demo (rest)"), ("kills_rest", "Kills without objective fights (total)"),
-            ("deaths_rest", "Deaths without objective fights (total)"),
+            ("n_rest", "Matches with demo (rest)"), ("kills_rest", "Kills without objective fights (mean)"),
+            ("deaths_rest", "Deaths without objective fights (mean)"),
             ("lane_dmg_done", "Daño hecho (líneas)"), ("lane_dmg_taken", "Daño recibido (líneas)"),
             ("lane_kills", "Kills (líneas)"), ("lane_deaths", "Muertes (líneas)"), ("ganks_made", "Gankeos hechos"), ("ganks_suffered", "Gankeos sufridos")]
     blocks = [ctx.sample_warning(),
               {"type": "text", "tone": "info",
                "text": "Medias por partida de cada jugador de la plantilla (identidad por jugador enlazado; si no, por cuenta). Fase de líneas = min 0–10. "
                        "Daño y gankeos solo promedian partidas con demo (columna «Con demo»); lo que falta se muestra «–». "
-                       "Kills/deaths without objective fights are totals over the matches with demo only (KOTH is not identifiable without it)."},
+                       "Kills/deaths without objective fights are per-match means over the matches with demo only (see the column Matches with demo (rest)) (KOTH is not identifiable without it)."},
               {"type": "table", "kind": "jugadores", "title": "Medias por jugador", "n": ctx.n,
                "columns": [{"key": k, "label": l} for k, l in cols], "rows": rows}]
 
@@ -90,8 +90,8 @@ def jugadores(ctx):
     for a in players[:MAX_MAPAS]:
         nr = sum(1 for p, _ in a["items"] if p["kills_rest"] is not None)
         blocks += [zonas(a, a["dc"], "zonas donde más muere", "them"), zonas(a, a["kc"], "zonas donde más mata", "us"),
-                   zonas(a, a["drc"], "zones where he dies most (without objective fights)", "them", nr),
-                   zonas(a, a["krc"], "zones where he kills most (without objective fights)", "us", nr)]
+                   zonas(a, a["drc"], "zones where they die most (without objective fights)", "them", nr),
+                   zonas(a, a["krc"], "zones where they kill most (without objective fights)", "us", nr)]
     if len(players) > MAX_MAPAS:
         blocks.append({"type": "text", "tone": "info", "text": f"Mapas de zonas solo de los {MAX_MAPAS} jugadores con más partidas."})
     return blocks

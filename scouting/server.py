@@ -47,14 +47,14 @@ def _wiki_hero_file(name):
     return name.replace("&", "%26").replace(" ", "_") + "_vertical.png"
 
 
-def match_payload_extras(con, mid, mi):
+def match_payload_extras(con, mid, mi, demo_summary=None):
     """Fase de líneas y desglose por jugador de la partida (con los datos crudos del demo si existen).
     Si el cálculo falla devuelve None en cada uno: la vista lo muestra como no disponible."""
     try:
         ld = demo.lane_data(con, int(mid))
         lp = lanephase.lane_phase(mi, ld["rows"] if ld else None, ld["rules"] if ld else None,
                                   tick_limit=ld.get("limit") if ld else None)
-        fx = fights.classify(mi, demo.summary(con, int(mid)) if con is not None else None)
+        fx = fights.classify(mi, demo_summary)
         return {"lane_phase": lp, "player_stats": playerstats.player_stats(mi, lp, fights=fx),
                 "fights": {"koth_known": fx["koth_known"], "counts": fights.counts(fx),
                            "labels": [e["fight"] for e in fx["events"]]}}
@@ -401,7 +401,7 @@ class App:
     def _demo_of(con, mid, mi):
         dm = demo.summary(con, int(mid))
         out = {"demo": dm, "comeback": matches.comeback_flags(mi, dm)}
-        out.update(match_payload_extras(con, mid, mi))
+        out.update(match_payload_extras(con, mid, mi, dm))
         return out
 
     def match_demo(self, req, mid):

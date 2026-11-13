@@ -113,7 +113,7 @@ async function showMatch(root, id, ctx) {
 let heroById = new Map();
 let demoTimer = null;
 let matchGen = 0;
-const DEMO_TABS = new Set(['Objetivos', 'Midboss', 'Fase de líneas', 'Jugadores']);
+const DEMO_TABS = new Set(['Objetivos', 'Midboss', 'Fase de líneas', 'Jugadores', 'Minimapa']);
 const LANE_POLLS = 15; // con el demo listo pero sin datos de líneas: como mucho 15 consultas (5 min)
 /** Mientras el demo está pendiente, consulta en segundo plano /api/matches/{id}/demo cada 20 s (sin repintar);
  *  cuando deja de estar pendiente actualiza m.demo/m.comeback y llama a onReady. Se detiene al salir de la partida. */
@@ -132,7 +132,8 @@ function scheduleDemoRefresh(root, id, gen, m, onReady, tries = 0) {
     try { r = await api.get(`/api/matches/${id}/demo`); } catch { /* fallo de red: se reintenta en el siguiente ciclo */ }
     if (!still()) return;
     if (r) {
-      const changed = r.demo?.state !== m.demo?.state || r.lane_phase?.source !== m.lane_phase?.source;
+      const changed = r.demo?.state !== m.demo?.state || r.lane_phase?.source !== m.lane_phase?.source
+        || r.fights?.koth_known !== m.fights?.koth_known;
       m.demo = r.demo; m.comeback = r.comeback;
       if (r.lane_phase !== undefined) { m.lane_phase = r.lane_phase; m.player_stats = r.player_stats; }
       if (r.fights !== undefined) m.fights = r.fights;

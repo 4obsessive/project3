@@ -160,7 +160,7 @@ class Split(unittest.TestCase):
             d = [e for e in ev if e["victim_slot"] == p["slot"]]
             self.assertEqual(p["kills_rest"], sum(1 for e in k if e["fight"] == "rest"))
             self.assertEqual(p["deaths_rest"], sum(1 for e in d if e["fight"] == "rest"))
-            self.assertEqual(sum(n for _, _, n in p["kill_cells_rest"]) <= p["kills_rest"], True)
+            self.assertLessEqual(sum(n for _, _, n in p["kill_cells_rest"]), p["kills_rest"])
             self.assertEqual(p["fights"]["deaths"]["rest"], p["deaths_rest"])
             self.assertEqual(sum(p["fights"]["deaths"].values()), len(d))
             self.assertEqual(sum(p["fights"]["kills"].values()), len(k))
@@ -225,8 +225,22 @@ class ReportSplit(unittest.TestCase):
         ps = {p["account_id"]: p for p in playerstats.player_stats(self.mi, None, fights=fights.classify(self.mi, self.summ))}
         for r in tb["rows"]:
             p = ps[r["account_id"]]
-            self.assertEqual(r["kills_rest"], p["kills_rest"])
-            self.assertEqual(r["deaths_rest"], p["deaths_rest"])
+            self.assertEqual(r["kills_rest"], round(p["kills_rest"], 1))
+            self.assertEqual(r["deaths_rest"], round(p["deaths_rest"], 1))
+            self.assertEqual(r["n_rest"], 1)
+
+    def test_m08_mixed_demo_and_no_demo(self):
+        import copy
+        from scouting import playerstats
+        mi2 = copy.deepcopy(self.mi)
+        mi2["match_id"] = self.MID + 1
+        sec = self.run_report(mis=[self.mi, mi2])["jugadores"]
+        tb = next(b for b in sec["blocks"] if b.get("kind") == "jugadores")
+        ps = {p["account_id"]: p for p in playerstats.player_stats(self.mi, None, fights=fights.classify(self.mi, self.summ))}
+        for r in tb["rows"]:
+            self.assertEqual(r["n"], 2)
+            self.assertEqual(r["n_rest"], 1)
+            self.assertEqual(r["kills_rest"], round(ps[r["account_id"]]["kills_rest"], 1))
 
 
 if __name__ == "__main__":
