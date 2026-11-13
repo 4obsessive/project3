@@ -1066,7 +1066,10 @@ nav.toc { display: block; overflow: visible; width: auto; }
 .lp-bar .bar span { display: block; height: 100%; }
 .lp-bar .bar .done { background: var(--ok); } .lp-bar .bar .taken { background: var(--bad); }
 .lp-bar .v { text-align: right; font-variant-numeric: tabular-nums; }
-.lp-facts { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; margin: 8px 0 0; font-size: var(--fs-sm); }
-.lp-facts dt { color: var(--muted); } .lp-facts dd { margin: 0; text-align: right; }
+.lp-facts { display: grid; grid-template-columns: minmax(max-content, 1fr) auto; gap: 3px 12px; margin: 8px 0 0; font-size: var(--fs-sm); }
+.lp-facts dt { color: var(--muted); white-space: nowrap; }
+.lp-facts dd.wide { grid-column: 1 / -1; text-align: left; margin-bottom: 4px; } .lp-facts dd { margin: 0; text-align: right; }
 .pj-detail { margin-top: 14px; }
 .pj-map { min-width: 0; }
+
+.tabs button { white-space: nowrap; flex: 0 0 auto; }

@@ -137,7 +137,7 @@ function scheduleDemoRefresh(root, id, gen, m, onReady, tries = 0) {
       if (r.lane_phase !== undefined) { m.lane_phase = r.lane_phase; m.player_stats = r.player_stats; }
       if (changed) onReady();
     }
-    scheduleDemoRefresh(root, id, gen, m, onReady, tries + 1);
+    scheduleDemoRefresh(root, id, gen, m, onReady, m.demo?.state === 'done' ? tries + 1 : 0);
   }, 20000);
 }
 /** Retrato del héroe de un jugador de la partida (con los datos de /api/heroes si hay). */
@@ -444,8 +444,8 @@ function faseLineas(root, m, tname) {
         el('dt', {}, 'Guardian rival tirado'), el('dd', {}, guard(c.guardian_taken_t)),
         el('dt', {}, 'Guardian propio perdido'), el('dd', {}, guard(c.guardian_lost_t)),
         el('dt', {}, 'Kills / muertes'), el('dd', {}, el('b', {}, `${c.kills ?? '–'} / ${c.deaths ?? '–'}`)),
-        el('dt', {}, 'Primer gankeo hecho'), el('dd', {}, gank(c.first_gank_made)),
-        el('dt', {}, 'Primer gankeo sufrido'), el('dd', {}, gank(c.first_gank_suffered))));
+        el('dt', { style: { gridColumn: '1 / -1' } }, 'Primer gankeo hecho'), el('dd', { class: 'wide' }, gank(c.first_gank_made)),
+        el('dt', { style: { gridColumn: '1 / -1' } }, 'Primer gankeo sufrido'), el('dd', { class: 'wide' }, gank(c.first_gank_suffered))));
   };
   for (const l of laneIds) root.append(el('section', { class: 'lp-lane' }, el('h3', {}, laneChip(l, m.lanes)), el('div', { class: 'grid2' }, card(l, 0), card(l, 1))));
   root.append(el('p', { class: 'muted small' }, 'Las líneas se asignan por la posición de cada jugador, no por el lado del mapa. «–» = sin dato.'));
@@ -465,7 +465,7 @@ function jugadores(root, m, tname) {
     { key: 'pname', label: 'Jugador' },
     { key: 'team', label: 'Equipo', render: r => teamTag(r.team, tname) },
     { key: 'lane', label: 'Línea', render: laneCell, sort: r => r.lane ?? 99 },
-    { key: 'kda', label: 'KDA', render: r => `${r.kills}/${r.deaths}/${r.assists}` + (r.kda != null ? ` (${fmt.dec(r.kda, 1)})` : ''), sort: r => r.kda ?? -1 },
+    { key: 'kda', label: 'KDA', render: r => [r.kills, r.deaths, r.assists].map(v => v ?? '–').join('/') + (r.kda != null ? ` (${fmt.dec(r.kda, 1)})` : ''), sort: r => r.kda ?? -1 },
     { key: 'troopers_per_min', label: 'Troopers/min', fmt: '1' }, { key: 'jungla_per_min', label: 'Jungla/min', fmt: '1' },
     { key: 'nw_per_min', label: 'NW/min', fmt: 'int' }, { key: 'nw_at_600', label: "NW a los 10'", fmt: 'int' },
     { key: 'player_damage', label: 'Daño', fmt: 'int' },
