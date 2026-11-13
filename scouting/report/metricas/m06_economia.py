@@ -48,7 +48,7 @@ def economia(ctx):
 
 PHASE_LABELS = ["0-10 min", "10-20 min", "20 min-final"]
 RATE_KEYS = [("troopers_kills", "Troopers/min"), ("jungla_kills", "Jungla/min"),
-             ("troopers_jungla_kills", "Troopers + jungla/min"), ("almas", "Almas/min")]
+             ("troopers_jungla_kills", "Troopers + jungla/min"), ("net_worth", "Net worth/min")]
 
 
 def _mean(vals):
@@ -64,18 +64,23 @@ def _economia_ampliada(ctx):
     ids = [i for i in M.GOLD_SOURCES if any(e["teams"][str(m.our)]["sources"].get(i) or e["teams"][str(m.their)]["sources"].get(i) for m, e in ecos)]
     us = [round(_mean([e["teams"][str(m.our)]["sources"].get(i, 0) for m, e in ecos])) for i in ids]
     them = [round(_mean([e["teams"][str(m.their)]["sources"].get(i, 0) for m, e in ecos])) for i in ids]
-    blocks = [{"type": "bars", "title": "Almas por fuente (media por partida, equipo)", "unit": "", "n": n,
+    blocks = [{"type": "text", "tone": "info",
+               "text": "Las barras de fuentes son almas ganadas por fuente (gold_sources, acumulado de la partida). Net worth/min es el cambio de net worth por minuto, "
+                       "que puede diferir de lo ganado (p. ej. las muertes restan almas)."},
+              {"type": "bars", "title": "Almas por fuente (media por partida, equipo)", "unit": "", "n": n,
                "labels": [M.GOLD_SOURCES[i] for i in ids],
                "series": [{"name": "Rival", "side": "them", "values": them}, {"name": "Este equipo", "side": "us", "values": us}]}]
+    # solo cuentan las partidas que llegaron a cada fase
+    per = [[(m, e) for m, e in ecos if m.duration > e["phases"][j][0]] for j in range(3)]
     cols = [{"key": "metrica", "label": "Ritmo (equipo entero)"}]
     for j, lab in enumerate(PHASE_LABELS):
-        cols += [{"key": f"us{j}", "label": f"{lab} · equipo"}, {"key": f"them{j}", "label": f"{lab} · rival"}]
+        cols += [{"key": f"us{j}", "label": f"{lab} · equipo (n={len(per[j])})"}, {"key": f"them{j}", "label": f"{lab} · rival (n={len(per[j])})"}]
     rows = []
     for key, label in RATE_KEYS:
         row = {"metrica": label}
         for j in range(3):
-            row[f"us{j}"] = round(_mean([e["teams"][str(m.our)]["per_phase"][j][key] for m, e in ecos]), 1)
-            row[f"them{j}"] = round(_mean([e["teams"][str(m.their)]["per_phase"][j][key] for m, e in ecos]), 1)
+            row[f"us{j}"] = round(_mean([e["teams"][str(m.our)]["per_phase"][j][key] for m, e in per[j]]), 1)
+            row[f"them{j}"] = round(_mean([e["teams"][str(m.their)]["per_phase"][j][key] for m, e in per[j]]), 1)
         rows.append(row)
     blocks.append({"type": "table", "title": "Ritmos por minuto por fase (media por partida)", "n": n, "columns": cols, "rows": rows})
     return blocks

@@ -337,9 +337,9 @@ def source_at(player, source, t):
 
 
 def _cumulative(player, t):
-    """Valores acumulados en t: kills de troopers/jungla, almas y oro por fuente."""
+    """Valores acumulados en t: kills de troopers/jungla, net worth y oro por fuente."""
     c = {"troopers_kills": stat_at(player, "creep_kills", t) or 0, "jungla_kills": stat_at(player, "neutral_kills", t) or 0,
-         "almas": stat_at(player, "net_worth", t) or 0}
+         "net_worth": stat_at(player, "net_worth", t) or 0}
     c["troopers_jungla_kills"] = c["troopers_kills"] + c["jungla_kills"]
     for sid in GOLD_SOURCES:
         c[f"fuente_{sid}"] = source_at(player, sid, t) or 0

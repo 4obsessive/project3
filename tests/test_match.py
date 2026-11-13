@@ -133,6 +133,22 @@ class SideAndReport(unittest.TestCase):
         titles = [b.get("title", "") for b in eco["blocks"]]
         self.assertTrue(any("Almas por fuente" in t for t in titles))
         self.assertTrue(any("Ritmos por minuto" in t for t in titles))
+        # valores conocidos: troopers (fuente 2) y troopers/min de la primera fase, equipo 1 (nuestro) vs equipo 0
+        def team_src(tm, sid):
+            return sum(next((g["gold"] for g in p["stats"][-1]["gold_sources"] if g["source"] == sid), 0)
+                       for p in self.mi["players"] if p["team"] == tm)
+        bars = next(b for b in eco["blocks"] if b["type"] == "bars" and "Almas por fuente" in b["title"])
+        k = bars["labels"].index("Troopers")
+        vals = {sr["side"]: sr["values"][k] for sr in bars["series"]}
+        self.assertEqual(vals["us"], team_src(1, 2))
+        self.assertEqual(vals["them"], team_src(0, 2))
+        tab = next(b for b in eco["blocks"] if b["type"] == "table" and "Ritmos" in b["title"])
+        row = next(r for r in tab["rows"] if r["metrica"] == "Troopers/min")
+        e = M.economy(self.mi)
+        self.assertEqual(row["us0"], round(e["teams"]["1"]["per_phase"][0]["troopers_kills"], 1))
+        self.assertEqual(row["them0"], round(e["teams"]["0"]["per_phase"][0]["troopers_kills"], 1))
+        self.assertTrue(any("n=1" in c["label"] for c in tab["columns"]))
+        self.assertTrue(any(r["metrica"] == "Net worth/min" for r in tab["rows"]))
 
     def test_report_runs_all_metrics(self):
         out = report.run("Prueba", [self.data], self.team1)
@@ -243,9 +259,6 @@ class Minimap(unittest.TestCase):
         self.assertGreater(res["oficial"]["precision"], 0.95)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class Economy(unittest.TestCase):
     @classmethod
@@ -273,3 +286,7 @@ class Economy(unittest.TestCase):
         ov = M.overview(self.mi)
         self.assertIn("economy", ov)
         self.assertEqual(ov["economy"]["source_names"][3], "Jungla")
+
+
+if __name__ == "__main__":
+    unittest.main()
