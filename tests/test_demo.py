@@ -24,8 +24,10 @@ class Summarize(unittest.TestCase):
         self.assertEqual({k: v for k, v in demo.QUERIES.items() if k != "lane_damage"}, self.data["queries"])
         with open(LANE_FIXTURE, encoding="utf-8") as f:
             lane = json.load(f)
-        self.assertEqual(demo.QUERIES["lane_damage"], lane["query"])
-        self.assertEqual(demo.LANE_TICK_LIMIT, 48000)
+        # El fixture se consultó con el límite antiguo (48000); la consulta actual solo cambia ese número.
+        self.assertEqual(demo.LANE_TICK_LIMIT, (600 + 3600) * 64)
+        self.assertEqual(demo.LANE_TICK_LIMIT_LEGACY, 48000)
+        self.assertEqual(demo.QUERIES["lane_damage"], lane["query"].replace("d.tick < 48000", f"d.tick < {demo.LANE_TICK_LIMIT}"))
 
     def test_tick_to_game_seconds(self):
         rules = self.results["rules"]
@@ -546,6 +548,42 @@ class Worker(unittest.TestCase):
         self.assertEqual(len(self._posts()), 4)
         self.assertEqual(self.con.execute("SELECT state FROM demo_jobs WHERE match_id=100").fetchone()[0], "done")
         self.assertIsNone(demo.lane_rows(self.con, 900))
+
+    def test_lane_limit_stored_with_rows(self):
+        self._hecha_sin_lineas(5)
+        demo.enqueue(self.con, 135801973)
+        w = self.mk()
+        w.step()
+        w.step()
+        for mid in (5, 135801973):
+            raw = json.loads(self.con.execute("SELECT raw FROM demo_jobs WHERE match_id=?", (mid,)).fetchone()[0])
+            self.assertEqual(raw["lane_damage_limit"], demo.LANE_TICK_LIMIT)
+            self.assertEqual(demo.lane_data(self.con, mid)["limit"], demo.LANE_TICK_LIMIT)
+
+    def test_lane_limit_defaults_to_legacy(self):
+        res = dict(self.fixture["results"])
+        with self.con:
+            self.con.execute("INSERT INTO demo_jobs(match_id, state, raw, lane_state, updated_at) VALUES(5, 'done', ?, 'ok', 0)",
+                             (json.dumps(res),))
+        self.assertEqual(demo.lane_data(self.con, 5)["limit"], 48000)
+
+    def test_backfill_empty_rows_not_stored(self):
+        self._hecha_sin_lineas(5)
+        self.fixture["results"]["lane_damage"] = []
+        w = self.mk()
+        self.assertTrue(w.step())
+        self.assertEqual(tuple(self.con.execute("SELECT state, lane_state FROM demo_jobs").fetchone()), ("done", "vacio"))
+        self.assertIsNone(demo.lane_data(self.con, 5))
+        self.assertFalse(w.step())  # no se reintenta
+
+    def test_new_match_empty_lane_rows_not_stored(self):
+        self.fixture["results"]["lane_damage"] = []
+        demo.enqueue(self.con, 135801973)
+        self.mk().step()
+        r = self.con.execute("SELECT state, lane_state FROM demo_jobs").fetchone()
+        self.assertEqual((r["state"], r["lane_state"]), ("done", "vacio"))
+        self.assertIsNone(demo.lane_data(self.con, 135801973))
+        self.assertEqual(demo.summary(self.con, 135801973)["state"], "done")
 
     def test_lane_migration_on_old_table(self):
         import sqlite3

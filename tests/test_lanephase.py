@@ -427,5 +427,91 @@ class ReportLanes(unittest.TestCase):
         json.dumps(self.out)
 
 
+class LanePhaseFallbacks(unittest.TestCase):
+    """Demo incompleto (límite de tick por debajo de 600 s de juego) o sin filas utilizables → aprox, nunca ceros."""
+
+    def setUp(self):
+        self.mi = _mi()
+        self.rows = _load("demo_lane_135801973.json")["rows"]
+        self.rules = _load("demo_135801973.json")["results"]["rules"]
+        self.aprox = lanephase.lane_phase(self.mi)
+
+    def _same_as_aprox(self, res):
+        self.assertEqual(res["source"], "aprox")
+        self.assertEqual(res["players"], self.aprox["players"])
+        self.assertEqual(res["lanes"], self.aprox["lanes"])
+
+    def test_default_limit_is_legacy_48000_and_complete_here(self):
+        res = lanephase.lane_phase(self.mi, self.rows, self.rules)
+        self.assertEqual(res["source"], "demo")
+        self.assertFalse(res["demo_incompleto"])
+        self.assertEqual(lanephase.lane_phase(self.mi, self.rows, self.rules, tick_limit=48000), res)
+
+    def test_new_limit_is_complete(self):
+        res = lanephase.lane_phase(self.mi, self.rows, self.rules, tick_limit=demo.LANE_TICK_LIMIT)
+        self.assertEqual(res["source"], "demo")
+        self.assertFalse(res["demo_incompleto"])
+
+    def test_limit_below_600s_is_incomplete(self):
+        rules = copy.deepcopy(self.rules)
+        for r in rules:
+            r["paused_ticks"] = 20000  # 48000 - 20000 = 28000 ticks = 437 s < 600
+        res = lanephase.lane_phase(self.mi, self.rows, rules)
+        self._same_as_aprox(res)
+        self.assertTrue(res["demo_incompleto"])
+        res = lanephase.lane_phase(self.mi, self.rows, self.rules, tick_limit=30000)
+        self._same_as_aprox(res)
+        self.assertTrue(res["demo_incompleto"])
+
+    def test_empty_rows_is_aprox(self):
+        res = lanephase.lane_phase(self.mi, [], self.rules)
+        self._same_as_aprox(res)
+        self.assertFalse(res["demo_incompleto"])
+
+    def test_unmapped_rows_is_aprox(self):
+        rows = [dict(r, att=r["att"] + 10**9, vic=r["vic"] + 10**9) for r in self.rows]
+        self._same_as_aprox(lanephase.lane_phase(self.mi, rows, self.rules))
+
+    def test_aprox_has_no_gank_counts(self):
+        # Los gankeos necesitan el demo: sin él son None («–»), no un recuento parcial de kills.
+        self.assertEqual(self.aprox["source"], "aprox")
+        for p in self.aprox["players"].values():
+            self.assertIsNone(p["ganks_made"])
+            self.assertIsNone(p["ganks_suffered"])
+        for teams in self.aprox["lanes"].values():
+            for d in teams.values():
+                self.assertIsNone(d["first_gank_made"])
+                self.assertIsNone(d["first_gank_suffered"])
+
+    def test_payload_incomplete_demo_from_stored_limit(self):
+        import tempfile
+        from scouting import db, server
+        raw = _load("demo_135801973.json")["results"]
+        raw["lane_damage"] = self.rows
+        raw["lane_damage_limit"] = 30000
+        with tempfile.TemporaryDirectory() as tmp:
+            con = db.connect(os.path.join(tmp, "t.db"))
+            try:
+                con.execute("INSERT INTO demo_jobs (match_id, state, raw) VALUES (?, 'done', ?)", (135801973, json.dumps(raw)))
+                con.commit()
+                out = server.match_payload_extras(con, 135801973, self.mi)
+            finally:
+                con.close()
+        self.assertEqual(out["lane_phase"]["source"], "aprox")
+        self.assertTrue(out["lane_phase"]["demo_incompleto"])
+
+    def test_report_incomplete_demo_counts_as_no_demo(self):
+        from scouting import report
+        roster = {p["account_id"] for p in self.mi["players"] if p["team"] == 1}
+        ld = {135801973: {"rows": self.rows, "rules": self.rules, "limit": 30000}}
+        out = report.run("T", [{"match_info": self.mi}], roster, None, None, None, lane_data=ld)
+        sec = {s["id"]: s for s in out["sections"]}
+        cov = next(b for b in sec["fase_lineas"]["blocks"] if b.get("type") == "text" and "Con demo" in b["text"])
+        self.assertIn("Con demo de fase de líneas: 0 de 1", cov["text"])
+        self.assertIn("incompleto", cov["text"])
+        for t in (b for b in sec["fase_lineas"]["blocks"] if b.get("kind") == "duos"):
+            self.assertIsNone(t["rows"][0]["dmg_done"])
+
+
 if __name__ == "__main__":
     unittest.main()

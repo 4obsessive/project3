@@ -52,7 +52,8 @@ def match_payload_extras(con, mid, mi):
     Si el cálculo falla devuelve None en cada uno: la vista lo muestra como no disponible."""
     try:
         ld = demo.lane_data(con, int(mid))
-        lp = lanephase.lane_phase(mi, ld["rows"] if ld else None, ld["rules"] if ld else None)
+        lp = lanephase.lane_phase(mi, ld["rows"] if ld else None, ld["rules"] if ld else None,
+                                  tick_limit=ld.get("limit") if ld else None)
         return {"lane_phase": lp, "player_stats": playerstats.player_stats(mi, lp)}
     except Exception:
         traceback.print_exc()

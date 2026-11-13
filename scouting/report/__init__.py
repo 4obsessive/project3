@@ -71,7 +71,8 @@ class MatchCtx:
         if self._lane_phase is None:
             from .. import lanephase
             ld = self._lane_data
-            self._lane_phase = lanephase.lane_phase(self.mi, ld["rows"] if ld else None, ld["rules"] if ld else None)
+            self._lane_phase = lanephase.lane_phase(self.mi, ld["rows"] if ld else None, ld["rules"] if ld else None,
+                                                    tick_limit=ld.get("limit") if ld else None)
         return self._lane_phase
 
     @property

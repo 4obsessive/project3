@@ -53,15 +53,31 @@ def _better(cur, new):
     return cur
 
 
-def lane_phase(mi, lane_rows=None, rules=None, paths=None):
+def _demo_usable(mi, lane_rows):
+    """Hay filas y al menos una enlaza dos jugadores de la partida (si no, serían ceros falsos)."""
+    by_acc = _slot_of(mi)
+    return any(by_acc.get(r.get("att")) is not None and by_acc.get(r.get("vic")) is not None for r in lane_rows or [])
+
+
+def lane_phase(mi, lane_rows=None, rules=None, paths=None, tick_limit=None):
     """Resumen por partida. ganks_made/ganks_suffered por jugador cuentan EPISODIOS (ver _episodes), no eventos.
-    Con las líneas no válidas: lanes {}, source None, lane/ganks None; el daño por jugador se mantiene."""
+    Con las líneas no válidas: lanes {}, source None, lane/ganks None; el daño por jugador se mantiene.
+
+    `tick_limit` = límite de tick con el que se consultaron `lane_rows` (por defecto el antiguo, 48000). Si con las
+    pausas de la partida no alcanza 600 s de juego, el daño del demo está incompleto: se usa la aproximación
+    (source "aprox") y demo_incompleto = True. Filas vacías o sin jugadores de la partida → aproximación.
+    Sin demo los gankeos no están disponibles (None)."""
     ps = matches.players(mi)
     team = {s: p.get("team") for s, p in ps.items()}
     lane_of = lanes_mod.assign_lanes(mi, paths if paths is not None else lanes_mod.load_paths())
     duo = lanes_mod.duos(mi, lane_of)
     valid = bool(duo)
-    use_demo = lane_rows is not None and rules is not None
+    use_demo = lane_rows is not None and rules is not None and _demo_usable(mi, lane_rows)
+    incompleto = False
+    if use_demo:
+        limit = tick_limit if tick_limit is not None else demo.LANE_TICK_LIMIT_LEGACY
+        if demo.game_seconds_from_tick(limit, rules) < T_FIN:
+            use_demo, incompleto = False, True
 
     d_done = {s: 0 for s in ps}
     d_taken = {s: 0 for s in ps}
@@ -103,7 +119,7 @@ def lane_phase(mi, lane_rows=None, rules=None, paths=None):
         k = d["killer_slot"]
         if k is not None and d["killer_team"] != d["victim_team"]:
             kills[k] += 1
-            if valid and t >= T_GANK and lane_of[k] != lane_of[d["victim_slot"]]:
+            if use_demo and valid and t >= T_GANK and lane_of[k] != lane_of[d["victim_slot"]]:
                 gank_ev.append(_event(t, k, d["victim_slot"], "kill"))
 
     # Guardians
@@ -148,12 +164,13 @@ def lane_phase(mi, lane_rows=None, rules=None, paths=None):
                 "dmg_taken_gank": tot(d_taken_g, slots, use_demo),
                 "guardian_taken_t": guard.get((ln, enemy)), "guardian_lost_t": guard.get((ln, tm)),
                 "deaths": sum(deaths[s] for s in slots), "kills": sum(kills[s] for s in slots),
-                "first_gank_suffered": suffered.get((ln, tm)),
-                "first_gank_made": made.get((ln, tm)),
+                "first_gank_suffered": suffered.get((ln, tm)) if use_demo else None,
+                "first_gank_made": made.get((ln, tm)) if use_demo else None,
             }
     players = {str(s): {"lane": lane_of.get(s) if valid else None,
                         "dmg_done": d_done[s], "dmg_taken": d_taken[s],
-                        "ganks_made": ganks_made[s] if valid else None,
-                        "ganks_suffered": ganks_suffered[s] if valid else None,
+                        "ganks_made": ganks_made[s] if valid and use_demo else None,
+                        "ganks_suffered": ganks_suffered[s] if valid and use_demo else None,
                         "deaths": deaths[s], "kills": kills[s]} for s in sorted(ps)}
-    return {"valid": valid, "source": ("demo" if use_demo else "aprox") if valid else None, "lanes": out_lanes, "players": players}
+    return {"valid": valid, "source": ("demo" if use_demo else "aprox") if valid else None, "demo_incompleto": incompleto,
+            "lanes": out_lanes, "players": players}

@@ -34,11 +34,12 @@ def fase_lineas(ctx):
     ln = lambda l: names.get(l, f"Carril {l}")
     duo = defaultdict(list)       # (carril, héroes ordenados) -> [(entrada propia, demo?)]
     lane_m = defaultdict(list)    # carril -> [(propia, rival, slot->hero, demo?)]
-    valid = demo_n = 0
+    valid = demo_n = incompleto = 0
     for m in ctx.matches:
         lp = m.lane_phase
         if not lp["valid"]:
             continue
+        incompleto += bool(lp.get("demo_incompleto"))
         valid += 1
         is_demo = lp["source"] == "demo"
         demo_n += is_demo
@@ -51,7 +52,9 @@ def fase_lineas(ctx):
             lane_m[int(lane_s)].append((mine, theirs, hero_of, is_demo))
     cov = {"type": "text", "tone": "confirmed" if valid == ctx.n and demo_n == ctx.n else "warning",
            "text": f"Partidas con líneas válidas (dos contra dos): {valid} de {ctx.n}. Con demo de fase de líneas: {demo_n} de {ctx.n}. "
-                   "El daño solo promedia las partidas con demo; el resto se excluye, no se estima."}
+                   "El daño solo promedia las partidas con demo; el resto se excluye, no se estima."
+                   + (f" Demo incompleto (las pausas dejan fuera parte de los 10 primeros minutos), contado como sin demo: {incompleto} de {ctx.n}."
+                      if incompleto else "")}
     if not valid:
         return [cov, {"type": "unavailable", "title": "Fase de líneas", "reason": "Ninguna partida tiene líneas válidas (dos jugadores por línea y equipo)."}]
     blocks = [ctx.sample_warning(valid), cov]

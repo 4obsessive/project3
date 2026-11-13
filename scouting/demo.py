@@ -30,9 +30,13 @@ CLUSTER_GAP_S = 60
 # koth_give_up vale ~3.4e38 mientras el cash-in sigue abierto.
 GIVE_UP_INFINITE = 1e30
 
-# Límite de tick de la consulta de líneas: 600 s x 64 = 38400 + margen para pausas.
-# Las filas se recortan a 600 s de juego al usarlas.
-LANE_TICK_LIMIT = 48000
+# Límite de tick de la consulta de líneas: 600 s de juego + hasta 3600 s de pausas, a 64 ticks/s.
+# Las filas se recortan a 600 s de juego al usarlas. El límite usado se guarda con las filas
+# (raw["lane_damage_limit"]); si con las pausas de la partida no llega a 600 s de juego, el daño del
+# demo está incompleto y la fase de líneas no lo usa (lanephase.lane_phase).
+LANE_TICK_LIMIT = (600 + 3600) * 64
+# Límite de las filas guardadas antes de registrar el límite (solo cubría ~150 s de pausas).
+LANE_TICK_LIMIT_LEGACY = 48000
 
 QUERIES = {
     "rejuv": "SELECT tick, killing_team, user_team FROM RejuvStatusEvent WHERE event_type = 4 ORDER BY tick",
@@ -359,9 +363,10 @@ def summary(con, match_id):
 
 
 def lane_data(con, match_id):
-    """Datos crudos de la fase de líneas de una partida: {"rows": lane_damage, "rules": filas de reglas}.
+    """Datos crudos de la fase de líneas de una partida: {"rows": lane_damage, "rules": filas de reglas, "limit": tick}.
 
-    Las filas `rules` permiten convertir ticks a segundos de partida (game_seconds_from_tick).
+    Las filas `rules` permiten convertir ticks a segundos de partida (game_seconds_from_tick); `limit` es el
+    límite de tick con el que se consultaron las filas (LANE_TICK_LIMIT_LEGACY si no se guardó).
     None si la partida no tiene `lane_damage` (sin fila, sin raw, aún sin rellenar o sin demo)."""
     r = con.execute("SELECT raw FROM demo_jobs WHERE match_id=?", (int(match_id),)).fetchone()
     if r is None or not r["raw"]:
@@ -370,7 +375,8 @@ def lane_data(con, match_id):
     rows = raw.get("lane_damage")
     if rows is None:
         return None
-    return {"rows": rows, "rules": sorted(raw.get("rules") or [], key=lambda x: x["tick"])}
+    return {"rows": rows, "rules": sorted(raw.get("rules") or [], key=lambda x: x["tick"]),
+            "limit": raw.get("lane_damage_limit") or LANE_TICK_LIMIT_LEGACY}
 
 
 def lane_rows(con, match_id):
@@ -458,8 +464,12 @@ class Worker:
         # Un error aquí nunca toca `state` ni `summary`: solo las columnas lane_*.
         try:
             res = self.client.run_queries(mid, only=["lane_damage"])
-            raw["lane_damage"] = res["lane_damage"]
-            self._lane_marcar(con, mid, lane_state="ok", raw=_json(raw))
+            if not res["lane_damage"]:
+                self._lane_marcar(con, mid, lane_state="vacio")  # sin filas: no se guarda ni se reintenta
+            else:
+                raw["lane_damage"] = res["lane_damage"]
+                raw["lane_damage_limit"] = LANE_TICK_LIMIT
+                self._lane_marcar(con, mid, lane_state="ok", raw=_json(raw))
         except NoDemo:
             self._lane_marcar(con, mid, lane_state="nodemo")  # no se reintenta
         except RateLimited:
@@ -486,8 +496,15 @@ class Worker:
                 resumen = summarize(res)
             except Exception as e:  # determinista: reintentar solo gastaría presupuesto
                 raise DemoFatal(f"no se pudo resumir el demo: {e!r}")
-            self._marcar(con, mid, "done", summary=_json(resumen), raw=_json(res), error=None,
-                         lane_state="ok" if "lane_damage" in res else None)
+            lane_state = None
+            if "lane_damage" in res:
+                if res["lane_damage"]:
+                    res["lane_damage_limit"] = LANE_TICK_LIMIT
+                    lane_state = "ok"
+                else:  # sin filas: no se guardan (serían ceros falsos) ni se reintentan
+                    del res["lane_damage"]
+                    lane_state = "vacio"
+            self._marcar(con, mid, "done", summary=_json(resumen), raw=_json(res), error=None, lane_state=lane_state)
         except NoDemo:
             self._marcar(con, mid, "nodemo", error=None)
         except RateLimited:

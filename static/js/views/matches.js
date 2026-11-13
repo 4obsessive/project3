@@ -121,7 +121,7 @@ function scheduleDemoRefresh(root, id, gen, m, onReady, tries = 0) {
   clearTimeout(demoTimer); demoTimer = null;
   const pending = m.demo?.state === 'pending';
   // con el demo listo pero sin el relleno de la fase de líneas se sigue consultando un tiempo limitado
-  const needLane = m.demo?.state === 'done' && m.lane_phase?.source !== 'demo' && tries < LANE_POLLS;
+  const needLane = m.demo?.state === 'done' && m.lane_phase?.source !== 'demo' && !m.lane_phase?.demo_incompleto && tries < LANE_POLLS;
   if (!pending && !needLane) return;
   const still = () => gen === matchGen && root.isConnected
     && location.hash.slice(1).split(/[/?]/)[0] === 'partidas' && location.hash.slice(1).split(/[/?]/)[1] === String(id);
@@ -403,7 +403,8 @@ function midboss(root, m, tname) {
 const LANE_UNAVAILABLE = 'No disponible: las posiciones no permiten saber la línea de cada jugador.';
 const srcLabel = lp => lp?.source === 'demo' ? 'demo' : lp?.source === 'aprox' ? 'aprox., sin demo' : 'sin datos';
 const srcNote = lp => el('p', { class: 'muted small' }, 'Fuente: ', el('b', {}, srcLabel(lp)),
-  lp?.source === 'aprox' ? ' · el reparto del daño (línea/gankeo) y los gankeos necesitan el demo; el resto se aproxima con las estadísticas de la partida.' : '');
+  lp?.source === 'aprox' && lp?.demo_incompleto ? ' · el demo de esta partida está incompleto (las pausas dejan fuera parte de los 10 primeros minutos), así que no se usa.' : '',
+  lp?.source === 'aprox' ? ' · el reparto del daño (línea/gankeo) y los gankeos necesitan el demo («–»); el resto se aproxima con las estadísticas de la partida.' : '');
 const minOf = t => t == null ? null : fmt.mmss(t);
 
 /** Dos barras (hecho / recibido) con escala común. */
@@ -425,6 +426,7 @@ function faseLineas(root, m, tname) {
   const all = laneIds.flatMap(l => Object.values(lp.lanes[String(l)]));
   const max = Math.max(1, ...all.flatMap(c => [c.dmg_done || 0, c.dmg_taken || 0]));
   const gank = g => {
+    if (lp.source !== 'demo') return el('span', { class: 'muted' }, '–');  // los gankeos necesitan el demo
     if (!g) return el('span', { class: 'muted' }, 'ninguno');
     return el('span', {}, `${minOf(g.t)} · `, el('b', {}, hname(g.attacker_slot)), ' gankea a ', el('b', {}, hname(g.victim_slot)), g.kind === 'kill' ? ' (kill)' : ' (daño)');
   };
