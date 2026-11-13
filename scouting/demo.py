@@ -250,7 +250,7 @@ class _HostRedirect(urllib.request.HTTPRedirectHandler):
         u = urllib.parse.urlsplit(newurl)
         if u.scheme != "https" or u.hostname not in (QUERY_HOST, RESULT_HOST):
             fp.close()
-            raise urllib.error.HTTPError(newurl, code, f"Redirección a host no permitido: {u.hostname}", headers, None)
+            raise urllib.error.HTTPError(newurl, code, f"Redirect to a disallowed host: {u.hostname}", headers, None)
         nueva = super().redirect_request(req, fp, code, msg, headers, newurl)
         if nueva is not None and u.hostname != QUERY_HOST:
             nueva.remove_header("X-api-key")  # la clave solo viaja a la API de consultas

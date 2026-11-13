@@ -56,7 +56,7 @@ def read_png_alpha(path):
     with open(path, "rb") as f:
         data = f.read()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise ValueError("No es un PNG")
+        raise ValueError("Not a PNG")
     pos, idat, w = 8, [], None
     while pos < len(data):
         ln, typ = struct.unpack(">I4s", data[pos:pos + 8])
@@ -64,7 +64,7 @@ def read_png_alpha(path):
         if typ == b"IHDR":
             w, h, depth, ctype, _c, _f, interlace = struct.unpack(">IIBBBBB", chunk)
             if depth != 8 or interlace:
-                raise ValueError("PNG no soportado (solo 8 bits sin entrelazar)")
+                raise ValueError("Unsupported PNG (8-bit non-interlaced only)")
         elif typ == b"IDAT":
             idat.append(chunk)
         elif typ == b"IEND":

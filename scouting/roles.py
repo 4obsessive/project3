@@ -41,13 +41,13 @@ def player_roles(hero_matches, roles_by_hero, threshold=_DEFAULT_THRESHOLD):
         if n <= 0:
             continue
         total += n
-        rs = roles_by_hero.get(hid) or ["Sin rol"]
+        rs = roles_by_hero.get(hid) or ["No role"]
         for r in rs:
             share[r] = share.get(r, 0) + n / len(rs)
     if not total:
         return [], []
     breakdown = sorted(((r, v / total) for r, v in share.items()), key=lambda t: -t[1])
-    main = [r for r, v in breakdown if v >= threshold and r != "Sin rol"]
+    main = [r for r, v in breakdown if v >= threshold and r != "No role"]
     return main, breakdown
 
 

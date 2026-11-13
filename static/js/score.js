@@ -4,8 +4,8 @@ import { store } from './util.js';
 
 export const DEFAULT_WEIGHTS = { win: 30, kda: 25, dmg: 15, econ: 15, obj: 5, pool: 10 };
 export const WEIGHT_LABELS = [
-  ['win', 'Winrate ajustado'], ['kda', 'KDA (índice por héroe)'], ['dmg', 'Daño/min (índice)'],
-  ['econ', 'Oro/min (índice)'], ['obj', 'Objetivos/min (índice)'], ['pool', 'Variedad de héroes'],
+  ['win', 'Adjusted winrate'], ['kda', 'KDA (per-hero index)'], ['dmg', 'Damage/min (index)'],
+  ['econ', 'Gold/min (index)'], ['obj', 'Objectives/min (index)'], ['pool', 'Hero variety'],
 ];
 
 /** Pesos guardados (migra la clave antigua `weights` a `weights2`: el modelo cambió, se empieza de cero). */

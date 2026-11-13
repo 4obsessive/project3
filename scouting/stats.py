@@ -50,7 +50,7 @@ def shrink_ratio(x, n, prior=1.0, prior_n=15):
     return (n * x + prior_n * prior) / (n + prior_n) if (n + prior_n) else prior
 
 
-RELIABILITY = [(150, "Alta"), (60, "Media"), (20, "Baja"), (0, "Insuficiente")]
+RELIABILITY = [(150, "High"), (60, "Medium"), (20, "Low"), (0, "Insufficient")]
 
 
 def reliability(n):
@@ -59,7 +59,7 @@ def reliability(n):
     for lim, label in RELIABILITY:
         if n >= lim:
             return label
-    return "Insuficiente"
+    return "Insufficient"
 
 
 def percentile_fn(values):

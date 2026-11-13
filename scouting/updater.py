@@ -14,12 +14,12 @@ from .db import kv_get, kv_set, now
 
 STEPS = ["leaderboard", "teams", "stats", "names", "ranks", "materialize"]
 STEP_LABELS = {
-    "leaderboard": "Descargando leaderboard",
-    "teams": "Leyendo equipos.txt",
-    "stats": "Descargando stats por héroe",
-    "names": "Nombres y avatares de Steam",
-    "ranks": "Rango (badge) de cada cuenta",
-    "materialize": "Calculando resúmenes",
+    "leaderboard": "Downloading leaderboard",
+    "teams": "Reading equipos.txt",
+    "stats": "Downloading per-hero stats",
+    "names": "Steam names and avatars",
+    "ranks": "Rank (badge) of each account",
+    "materialize": "Computing summaries",
 }
 
 
@@ -59,7 +59,7 @@ class Updater:
                 interrupted = con.execute("SELECT id FROM jobs WHERE kind='update' AND state='interrupted' ORDER BY id DESC LIMIT 1").fetchone()
                 due = time.time() - last >= float(cfg["update_interval_hours"]) * 3600
                 if not self.is_running() and (interrupted or due):
-                    self.start("reanudación" if interrupted else "programada")
+                    self.start("resume" if interrupted else "scheduled")
             except Exception as e:  # el planificador no debe morir
                 print(f"[actualizador] error en el planificador: {e}")
             stop_event.wait(60)
@@ -108,14 +108,14 @@ class Updater:
             with con:
                 con.execute("UPDATE jobs SET state='done', finished_at=? WHERE id=?", (now(), job_id))
                 kv_set(con, "last_success", now())
-            self._set(step=None, label="Completado", message="Actualización completada")
+            self._set(step=None, label="Completed", message="Update completed")
             print(f"[actualizador] Actualización #{job_id} completada.")
         except Exception as e:
             traceback.print_exc()
             msg = f"{type(e).__name__}: {e}"
             with con:
                 con.execute("UPDATE jobs SET state='interrupted', message=? WHERE id=?", (msg, job_id))
-            self._set(error=msg, label="Error (se reanudará)")
+            self._set(error=msg, label="Error (will resume)")
             print(f"[actualizador] Error: {msg}. Se reanudará en el próximo ciclo.")
 
     # ------------------------------------------------------------ pasos
@@ -204,7 +204,7 @@ class Updater:
                 chunk.append(e)
                 size += len(e["possible_account_ids"])
             if chunk and (e is None or size >= 1000):
-                self._set(message=f"Resolviendo cuentas ({done}/{total} candidatas)")
+                self._set(message=f"Resolving accounts ({done}/{total} candidates)")
                 out.update(self._resolve_chunk(con, chunk))
                 done += size
                 chunk, size = [], 0
@@ -283,7 +283,7 @@ class Updater:
                     con.executemany("INSERT OR REPLACE INTO hero_stats_7d VALUES(?,?,?,?)",
                                     [(r["account_id"], r["hero_id"], r.get("matches_played"), r.get("wins")) for r in rows7])
                 con.executemany("INSERT OR REPLACE INTO stats_fetched VALUES(?,?)", [(a, started) for a in batch])
-            self._set(done=total - len(todo) + i + len(batch), message=f"{total - len(todo) + i + len(batch)}/{total} cuentas")
+            self._set(done=total - len(todo) + i + len(batch), message=f"{total - len(todo) + i + len(batch)}/{total} accounts")
         self._population_baselines(con, min_ts)
 
     def _population_baselines(self, con, min_ts):

@@ -1,11 +1,11 @@
-// Búsqueda global (/ o Ctrl+K): jugadores, héroes e IDs de partida. Combobox accesible.
+// Global search (/ or Ctrl+K): players, heroes and match IDs. Accessible combobox.
 import { el } from './util.js';
 import { getPlayers, getHeroes } from './api.js';
 import { icon } from './icons.js';
 import { heroArt } from './ui.js';
 
 export function initSearch(box, ctx) {
-  const input = el('input', { type: 'search', placeholder: 'Buscar jugador, héroe o partida…', 'aria-label': 'Búsqueda global',
+  const input = el('input', { type: 'search', placeholder: 'Search player, hero or match…', 'aria-label': 'Global search',
     role: 'combobox', 'aria-expanded': 'false', 'aria-controls': 'gs-list', 'aria-autocomplete': 'list', autocomplete: 'off' });
   const list = el('ul', { class: 'gs-results', id: 'gs-list', role: 'listbox', hidden: true });
   box.append(icon('filter'), input, el('kbd', { 'aria-hidden': 'true' }, '/'), list);
@@ -15,12 +15,12 @@ export function initSearch(box, ctx) {
     q = q.trim().toLowerCase();
     if (!q) return [];
     const out = [];
-    if (/^\d{6,}$/.test(q)) out.push({ kind: 'Partida', label: `Partida ${q}`, go: () => { location.hash = `#partidas/${q}`; } });
+    if (/^\d{6,}$/.test(q)) out.push({ kind: 'Match', label: `Match ${q}`, go: () => { location.hash = `#matches/${q}`; } });
     const [players, heroes] = await Promise.all([getPlayers().catch(() => []), getHeroes().catch(() => [])]);
-    for (const h of heroes) if (h.name.toLowerCase().includes(q)) out.push({ kind: 'Héroe', label: h.name, hero: h, go: () => { location.hash = `#heroe/${h.id}`; } });
+    for (const h of heroes) if (h.name.toLowerCase().includes(q)) out.push({ kind: 'Hero', label: h.name, hero: h, go: () => { location.hash = `#hero/${h.id}`; } });
     const ps = players.filter(p => p.name.toLowerCase().includes(q) || (p.team || '').toLowerCase().includes(q) || p.accounts.some(a => String(a.account_id) === q))
       .sort((a, b) => (b.score_default ?? -1) - (a.score_default ?? -1)).slice(0, 8);
-    for (const p of ps) out.push({ kind: p.team || 'Jugador', label: p.name, player: p,
+    for (const p of ps) out.push({ kind: p.team || 'Player', label: p.name, player: p,
       go: async () => { const { openProfile } = await import('./views/profile.js'); openProfile(p.id, ctx); } });
     return out.slice(0, 12);
   }
@@ -28,11 +28,11 @@ export function initSearch(box, ctx) {
     list.innerHTML = '';
     items.forEach((it, i) => {
       const li = el('li', { role: 'option', id: `gs-${i}`, 'aria-selected': String(i === sel), onclick: () => choose(i) },
-        it.hero ? heroArt(it.hero, { size: 'mini' }) : it.player?.avatar ? el('img', { class: 'avatar-img', src: it.player.avatar, alt: '', style: { width: '22px', height: '22px' } }) : icon(it.kind === 'Partida' ? 'partidas' : 'jugadores'),
+        it.hero ? heroArt(it.hero, { size: 'mini' }) : it.player?.avatar ? el('img', { class: 'avatar-img', src: it.player.avatar, alt: '', style: { width: '22px', height: '22px' } }) : icon(it.kind === 'Match' ? 'matches' : 'players'),
         el('span', {}, it.label), el('span', { class: 'gs-kind' }, it.kind));
       list.append(li);
     });
-    if (!items.length && input.value.trim()) list.append(el('li', { class: 'gs-empty', role: 'option', 'aria-disabled': 'true' }, 'Sin resultados'));
+    if (!items.length && input.value.trim()) list.append(el('li', { class: 'gs-empty', role: 'option', 'aria-disabled': 'true' }, 'No results'));
     const open = !!input.value.trim();
     list.hidden = !open;
     input.setAttribute('aria-expanded', String(open));

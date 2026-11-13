@@ -42,7 +42,7 @@ def parse_text(text):
         if r:
             rows.append(r)
         elif line.strip() and not line.strip().startswith("#"):
-            errors.append(f"línea {n}: no se entiende «{line.strip()}»")
+            errors.append(f"line {n}: cannot parse \"{line.strip()}\"")
     return rows, errors
 
 

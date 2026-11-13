@@ -17,7 +17,7 @@ export async function render(root, ctx) {
     const id = idInput.value.trim();
     if (!id) return;
     btn.disabled = true; btn.textContent = 'Downloading…';
-    try { await api.post('/api/matches/load', { match_id: id }); await refresh(); location.hash = `#partidas/${id}`; }
+    try { await api.post('/api/matches/load', { match_id: id }); await refresh(); location.hash = `#matches/${id}`; }
     catch (e) { toast(e.message, true); }
     finally { btn.disabled = false; btn.textContent = 'Load'; }
   };
@@ -25,7 +25,7 @@ export async function render(root, ctx) {
   idInput.addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
   fileInput.addEventListener('change', async () => {
     const f = fileInput.files[0]; if (!f) return;
-    try { const r = await api.post('/api/matches/upload', await f.text()); toast(`Match ${r.match_id} saved`); await refresh(); location.hash = `#partidas/${r.match_id}`; }
+    try { const r = await api.post('/api/matches/upload', await f.text()); toast(`Match ${r.match_id} saved`); await refresh(); location.hash = `#matches/${r.match_id}`; }
     catch (e) { toast(e.message, true); }
     fileInput.value = '';
   });
@@ -48,7 +48,7 @@ export async function render(root, ctx) {
   await refresh();
   const id = ctx.params[0];
   if (id) showMatch(detail, id, ctx);
-  else detail.append(el('div', { class: 'panel empty' }, icon('partidas', 'big'), el('p', {}, 'Pick a saved match or load a new one by ID to see its scoreboard, gold difference and minimap.')));
+  else detail.append(el('div', { class: 'panel empty' }, icon('matches', 'big'), el('p', {}, 'Pick a saved match or load a new one by ID to see its scoreboard, gold difference and minimap.')));
 }
 
 async function showMatch(root, id, ctx) {
@@ -125,7 +125,7 @@ function scheduleDemoRefresh(root, id, gen, m, onReady, tries = 0) {
   const needLane = m.demo?.state === 'done' && m.lane_phase?.source !== 'demo' && !m.lane_phase?.demo_incompleto && tries < LANE_POLLS;
   if (!pending && !needLane) return;
   const still = () => gen === matchGen && root.isConnected
-    && location.hash.slice(1).split(/[/?]/)[0] === 'partidas' && location.hash.slice(1).split(/[/?]/)[1] === String(id);
+    && location.hash.slice(1).split(/[/?]/)[0] === 'matches' && location.hash.slice(1).split(/[/?]/)[1] === String(id);
   demoTimer = setTimeout(async () => {
     demoTimer = null;
     if (!still()) return;
@@ -172,7 +172,7 @@ function scoreboard(m, TN, verified) {
   return el('section', { class: 'panel scoreboard', 'aria-label': 'Scoreboard' },
     el('div', { class: 'sb-top' },
       el('h2', {}, `Match #${m.match_id}`),
-      el('button', { type: 'button', class: 'danger small-btn', onclick: async () => { if (!confirm('Delete the saved match?')) return; try { await api.post(`/api/matches/${m.match_id}/delete`); location.hash = '#partidas'; } catch (e) { toast(e.message, true); } } }, 'Delete')),
+      el('button', { type: 'button', class: 'danger small-btn', onclick: async () => { if (!confirm('Delete the saved match?')) return; try { await api.post(`/api/matches/${m.match_id}/delete`); location.hash = '#matches'; } catch (e) { toast(e.message, true); } } }, 'Delete')),
     el('div', { class: 'hero-banner' }, side(0),
       el('div', { class: 'bcenter' },
         el('div', { class: 'sb-vs' }, 'KILLS · DURATION'),
@@ -252,7 +252,7 @@ function headlineCards(m, mvp, who, tname) {
   const cards = [];
   if (mvp) cards.push(card('MVP', mvp, `${mvp.kills}/${mvp.deaths}/${mvp.assists}`, 'K/D/A', `${fmt.int(mvp.net_worth)} gold · as given by the match`));
   const dmg = best(m.players.filter(p => p.player_damage != null), p => p.player_damage);
-  if (dmg) cards.push(card('Top hero damage', dmg, fmt.int(dmg.player_damage), 'damage', null));
+  if (dmg && dmg.player_damage > 0) cards.push(card('Top hero damage', dmg, fmt.int(dmg.player_damage), 'damage', null));
   const stats = (m.player_stats || []).filter(r => r.troopers_per_min != null && r.jungla_per_min != null).map(r => ({ r, p: m.players.find(p => p.slot === r.slot) })).filter(x => x.p);
   const farm = stats.reduce((a, x) => (x.r.troopers_per_min + x.r.jungla_per_min > (a ? a.r.troopers_per_min + a.r.jungla_per_min : -Infinity) ? x : a), null);
   if (farm) cards.push(card('Top farmer', farm.p, fmt.dec(farm.r.troopers_per_min + farm.r.jungla_per_min, 1), 'troopers + jungle/min', `${fmt.dec(farm.r.troopers_per_min, 1)} troopers · ${fmt.dec(farm.r.jungla_per_min, 1)} jungle`));

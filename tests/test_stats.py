@@ -52,7 +52,7 @@ class Priors(unittest.TestCase):
     def test_reliability_boundaries(self):
         r = stats.reliability
         self.assertEqual([r(19), r(20), r(59), r(60), r(149), r(150)],
-                         ["Insuficiente", "Baja", "Baja", "Media", "Media", "Alta"])
+                         ["Insufficient", "Low", "Low", "Medium", "Medium", "High"])
 
     def test_evidence(self):
         self.assertEqual(stats.evidence(2, 3)["evidence"], "hint")
@@ -177,7 +177,7 @@ class UpdaterWindow(unittest.TestCase):
         summary.materialize(self.con)
         s = summary.get_one(self.con, pid)
         self.assertEqual(s["roles"], [])
-        self.assertEqual(s["role_text"], "muestra insuficiente")
+        self.assertEqual(s["role_text"], "insufficient sample")
 
     def test_migration_adds_columns(self):
         path = os.path.join(self.tmp, "old.db")

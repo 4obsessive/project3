@@ -1,5 +1,5 @@
-// Componentes visuales compartidos (sin dependencias): arte de héroe, rango, score, winrate,
-// confianza, roles, forma, sparkline, tiles, skeletons, pestañas y estados vacíos.
+// Shared visual components (no dependencies): hero art, rank, score, winrate,
+// confidence, roles, form, sparkline, tiles, skeletons, tabs and empty states.
 import { el, fmt } from './util.js';
 import { api } from './api.js';
 import { icon } from './icons.js';
@@ -77,7 +77,7 @@ export function scoreRing(score, { lo = null, hi = null, size = 40, provisional 
   svg.append(s('circle', { cx: size / 2, cy: size / 2, r, class: 'ring-track' }));
   if (lo != null && hi != null) svg.append(arc(Math.max(0, lo), Math.min(100, hi), 'ring-band'));
   svg.append(arc(0, v, 'ring-val'));
-  const tip = `Score ${Math.round(v)} de 100` + (lo != null ? ` · banda ${Math.round(lo)}–${Math.round(hi)}` : '') + (provisional ? ' · provisional (<20 partidas)' : '');
+  const tip = `Score ${Math.round(v)} of 100` + (lo != null ? ` · band ${Math.round(lo)}–${Math.round(hi)}` : '') + (provisional ? ' · provisional (<20 matches)' : '');
   return el('span', { class: `score-ring s${size}` + (v >= 85 ? ' gold' : '') + (provisional ? ' prov' : ''), title: tip, role: 'img', 'aria-label': tip },
     svg, el('span', { class: 'score-num' }, Math.round(v)));
 }
@@ -88,7 +88,7 @@ export function wrBar(wr, { lo = null, hi = null, muted = false, n = null } = {}
   if (wr == null) return el('span', { class: 'muted' }, '–');
   const pct = x => Math.max(0, Math.min(100, x * 100)) + '%';
   const tone = muted ? 'muted' : wr >= 0.55 ? 'good' : wr <= 0.45 ? 'bad' : 'mid';
-  const tip = `${fmt.pct(wr)}${n != null ? ` en ${fmt.int(n)} partidas` : ''}${lo != null ? ` · IC95 ${fmt.pct(lo)}–${fmt.pct(hi)}` : ''}`;
+  const tip = `${fmt.pct(wr)}${n != null ? ` in ${fmt.int(n)} matches` : ''}${lo != null ? ` · 95% CI ${fmt.pct(lo)}–${fmt.pct(hi)}` : ''}`;
   return el('span', { class: `wrbar ${tone}`, title: tip },
     el('span', { class: 'wr-num' }, fmt.pct(wr)),
     el('span', { class: 'wr-track', 'aria-hidden': 'true' },
@@ -97,22 +97,22 @@ export function wrBar(wr, { lo = null, hi = null, muted = false, n = null } = {}
       el('span', { class: 'wr-dot', style: { left: pct(wr) } })));
 }
 
-const LEVELS = ['Insuficiente', 'Baja', 'Media', 'Alta'];
-/** Cuatro segmentos (Insuficiente/Baja/Media/Alta) con tooltip «68% en 466 partidas · IC95 64–72%». */
+const LEVELS = ['Insufficient', 'Low', 'Medium', 'High'];
+/** Four segments (Insufficient/Low/Medium/High) with tooltip "68% in 466 matches · 95% CI 64–72%". */
 export function confidencePips(level, { wr = null, n = null, lo = null, hi = null } = {}) {
   const k = Math.max(0, LEVELS.indexOf(level));
-  const tip = `Confianza ${String(level || 'Insuficiente').toLowerCase()}` +
-    (n != null ? ` · ${wr != null ? fmt.pct(wr) + ' en ' : ''}${fmt.int(n)} partidas` : '') +
-    (lo != null ? ` · IC95 ${Math.round(lo * 100)}–${Math.round(hi * 100)}%` : '');
+  const tip = `Confidence: ${String(level || 'Insufficient').toLowerCase()}` +
+    (n != null ? ` · ${wr != null ? fmt.pct(wr) + ' in ' : ''}${fmt.int(n)} matches` : '') +
+    (lo != null ? ` · 95% CI ${Math.round(lo * 100)}–${Math.round(hi * 100)}%` : '');
   return el('span', { class: `pips l${k}`, title: tip, role: 'img', 'aria-label': tip },
     [0, 1, 2, 3].map(i => el('i', { class: i <= k && k > 0 ? 'on' : '' })));
 }
 
 // ------------------------------------------------------------- roles
-/** Máximo dos chips (punto de color + rol + %), «+N» con el reparto completo en el tooltip. */
+/** At most two chips (colour dot + role + %), "+N" with the full split in the tooltip. */
 export function roleChips(p, { max = 2 } = {}) {
-  const br = (p.role_breakdown || []).filter(([r]) => r !== 'Sin rol');
-  if (!br.length) return el('span', { class: 'muted small' }, p.role_text === 'muestra insuficiente' ? 'muestra insuficiente' : '–');
+  const br = (p.role_breakdown || []).filter(([r]) => r !== 'No role');
+  if (!br.length) return el('span', { class: 'muted small' }, p.role_text === 'insufficient sample' ? 'insufficient sample' : '–');
   const full = br.map(([r, v]) => `${r} ${Math.round(v * 100)}%`).join(' · ');
   const shown = br.slice(0, max);
   return el('span', { class: 'role-chips', title: full },
@@ -120,12 +120,12 @@ export function roleChips(p, { max = 2 } = {}) {
     br.length > max ? el('span', { class: 'role-more' }, `+${br.length - max}`) : null);
 }
 
-/** Barra apilada única con el reparto de roles. */
+/** Single stacked bar with the role split. */
 export function roleStack(p) {
   const br = (p.role_breakdown || []).filter(([, v]) => v >= 0.01);
-  if (!br.length) return el('p', { class: 'muted small' }, p.role_text === 'muestra insuficiente' ? 'Muestra insuficiente para asignar roles (menos de 10 partidas).' : 'Sin datos de roles.');
+  if (!br.length) return el('p', { class: 'muted small' }, p.role_text === 'insufficient sample' ? 'Not enough matches to assign roles (fewer than 10).' : 'No role data.');
   return el('div', { class: 'role-stack-wrap' },
-    el('div', { class: 'role-stack', role: 'img', 'aria-label': 'Reparto de roles: ' + br.map(([r, v]) => `${r} ${Math.round(v * 100)}%`).join(', ') },
+    el('div', { class: 'role-stack', role: 'img', 'aria-label': 'Role split: ' + br.map(([r, v]) => `${r} ${Math.round(v * 100)}%`).join(', ') },
       br.map(([r, v]) => el('span', { style: { width: (v * 100) + '%', background: roleColor(r) }, title: `${r} ${Math.round(v * 100)}%` }))),
     el('div', { class: 'role-legend' }, br.map(([r, v]) => el('span', { class: 'role-chip', style: { '--role': roleColor(r) } }, el('i'), r, el('b', {}, Math.round(v * 100) + '%')))));
 }
@@ -135,7 +135,7 @@ export function formStrip(last20) {
   if (!last20?.length) return el('span', { class: 'muted small' }, '–');
   const items = last20.slice().reverse();
   const w = items.filter(x => x.won).length;
-  return el('span', { class: 'form-strip', role: 'img', 'aria-label': `Últimas ${items.length}: ${w} victorias, ${items.length - w} derrotas` },
+  return el('span', { class: 'form-strip', role: 'img', 'aria-label': `Last ${items.length}: ${w} wins, ${items.length - w} losses` },
     items.map(x => el('i', { class: x.won ? 'w' : 'l' })));
 }
 
@@ -176,7 +176,7 @@ export function emptyState(text, { ico = 'grid', action = null } = {}) {
 /** Skeleton con la forma de la vista final (sustituye a los spinners de carga de ruta). */
 export function skeleton(kind = 'table') {
   const bar = (cls = '') => el('span', { class: 'sk ' + cls });
-  const box = el('div', { class: 'skeleton', role: 'status', 'aria-label': 'Cargando…' }, el('span', { class: 'sr-only' }, 'Cargando…'));
+  const box = el('div', { class: 'skeleton', role: 'status', 'aria-label': 'Loading…' }, el('span', { class: 'sr-only' }, 'Loading…'));
   if (kind === 'tiles' || kind === 'table') box.append(el('div', { class: 'sk-tiles' }, [0, 1, 2, 3].map(() => bar('tile'))));
   if (kind === 'table' || kind === 'rows') box.append(el('div', { class: 'sk-rows' }, Array.from({ length: 8 }, () => bar('row'))));
   if (kind === 'grid') box.append(el('div', { class: 'sk-grid' }, Array.from({ length: 6 }, () => bar('card'))));
@@ -185,7 +185,7 @@ export function skeleton(kind = 'table') {
 }
 
 /** Pestañas accesibles (role=tablist, flechas izquierda/derecha) con subrayado deslizante. */
-export function tabs(items, { onChange, initial = 0, label = 'Secciones' } = {}) {
+export function tabs(items, { onChange, initial = 0, label = 'Sections' } = {}) {
   const list = el('div', { class: 'tabs v3', role: 'tablist', 'aria-label': label });
   const ink = el('span', { class: 'tab-ink', 'aria-hidden': 'true' });
   const btns = items.map((it, i) => el('button', { type: 'button', role: 'tab', id: `tab-${it.id}`, 'aria-selected': String(i === initial), tabindex: i === initial ? '0' : '-1',
@@ -229,11 +229,33 @@ export function countUp(node, target, format = v => Math.round(v)) {
   return node;
 }
 
-/** «Ranked · 12 oct – 12 nov · 466 partidas» */
+/** "Ranked · Oct 12 – Nov 12 · 466 matches" */
 export function windowText(win, n = null) {
   if (!win) return '';
-  const mode = win.match_mode === 'ranked' ? 'Ranked' : win.match_mode ? 'Ranked + normal' : 'Todas las partidas';
+  const mode = win.match_mode === 'ranked' ? 'Ranked' : win.match_mode ? 'Ranked + normal' : 'All matches';
   const d = t => new Date(t * 1000).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }).replace('.', '');
   const range = win.start && win.end ? `${d(win.start)} – ${d(win.end)}` : '';
-  return [mode, range, n != null ? `${fmt.int(n)} partidas` : null].filter(Boolean).join(' · ');
+  return [mode, range, n != null ? `${fmt.int(n)} matches` : null].filter(Boolean).join(' · ');
 }
+
+/** Number with a small in-cell bar (0..max); `compact` for dense ranking tables. */
+export function cellBar(value, max, text, { compact = true, title = null } = {}) {
+  if (value == null || !isFinite(value)) return el('span', { class: 'muted' }, '–');
+  const pct = !max ? 0 : Math.max(0, Math.min(100, 100 * Math.abs(value) / max));
+  return el('span', { class: 'cell-bar' + (compact ? ' compact' : '') + (value < 0 ? ' neg' : ''), title },
+    el('span', { class: 'cell-bar-track', 'aria-hidden': 'true' }, el('span', { class: 'cell-bar-fill', style: { width: pct + '%' } })),
+    el('span', { class: 'cell-bar-val' }, text ?? fmt.int(value)));
+}
+
+/** Round avatar of a player: Steam avatar, falling back to the hero art (or an initial). */
+export function playerPic(p, hero, { size = 'round' } = {}) {
+  const fallback = () => heroArt(hero || { name: p?.name }, { size });
+  if (!p?.avatar) return fallback();
+  const img = el('img', { class: 'avatar-img', src: p.avatar, alt: '', loading: 'lazy' });
+  img.addEventListener('error', () => img.replaceWith(fallback()));
+  return img;
+}
+
+// Tracking statuses and the adult flag are stored as fixed values; these are their English labels.
+export const STATUS_LABEL = { pendiente: 'Pending', 'en seguimiento': 'Tracking', contactado: 'Contacted', 'en prueba': 'On trial', fichado: 'Signed', descartado: 'Dropped' };
+export const ADULT_LABEL = { desconocido: 'Unknown', 'sí': 'Yes', no: 'No' };

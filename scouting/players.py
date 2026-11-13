@@ -80,7 +80,7 @@ def unlink_account(con, player_id, account_id):
     """Separa una cuenta en un jugador nuevo (no se puede separar la cuenta principal)."""
     p = con.execute("SELECT primary_account_id FROM players WHERE id=?", (player_id,)).fetchone()
     if not p or p[0] == account_id:
-        raise ValueError("No se puede separar la cuenta principal")
+        raise ValueError("The primary account cannot be unlinked")
     with con:
         con.execute("DELETE FROM accounts WHERE account_id=? AND player_id=?", (account_id, player_id))
         create_player(con, account_id, None, "manual")
@@ -97,9 +97,9 @@ def update_manual(con, player_id, fields):
         if isinstance(v, str):
             v = v.strip()[:4000] or None
         if k == "status" and v not in STATUSES:
-            raise ValueError(f"Estado no válido: {v}")
+            raise ValueError(f"Invalid status: {v}")
         if k == "adult" and v not in ADULT:
-            raise ValueError("Mayor de edad debe ser sí / no / desconocido (nunca la edad exacta)")
+            raise ValueError("Adult must be sí / no / desconocido (never the exact age)")
         clean[k] = v
     if not con.execute("SELECT 1 FROM players WHERE id=?", (player_id,)).fetchone():
         raise KeyError(player_id)
@@ -197,8 +197,8 @@ def duos(con, client, player_id, days=30, max_age_s=12 * 3600):
             "account_id": m, "name": names.get(m), "player_id": player_of(con, m),
             "party_matches": v[0], "party_winrate": v[1] / v[0] if v[0] else None,
         } for m, v in sorted(party_totals.items(), key=lambda kv: -kv[1][0])[:5]],
-        "note": "Dúo = partida en la que ese compañero era el único otro miembro del grupo. "
-                "«Compañeros de grupo» incluye tríos y stacks.",
+        "note": "Duo = a match where that teammate was the only other member of the party. "
+                "\"Party mates\" includes trios and stacks.",
     }
 
 
@@ -326,5 +326,5 @@ def profile(con, client, player_id, current_lid, with_duos=True):
         try:
             s["duos"] = duos(con, client, player_id)
         except Exception as e:
-            s["duos"] = {"error": f"No se pudieron obtener los compañeros: {e}"}
+            s["duos"] = {"error": f"Could not fetch teammates: {e}"}
     return s

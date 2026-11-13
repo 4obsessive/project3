@@ -67,7 +67,7 @@ def _qint(req, name, default):
     try:
         return int(req.query.get(name, [default])[0])
     except (TypeError, ValueError):
-        raise HttpError(400, f"Parámetro no válido: {name}")
+        raise HttpError(400, f"Invalid parameter: {name}")
 
 
 def _is_int(v):
@@ -82,24 +82,24 @@ def validate_config(changes):
     if "update_interval_hours" in changes:
         v = changes["update_interval_hours"]
         if isinstance(v, bool) or not isinstance(v, (int, float)) or not (1 <= v <= 720):
-            raise HttpError(400, "update_interval_hours debe ser un número entre 1 y 720")
+            raise HttpError(400, "update_interval_hours must be a number between 1 and 720")
         changes["update_interval_hours"] = float(v)
     for k, lo, hi in (("stats_days", 1, 365), ("batch_size", 1, 1000)):
         if k in changes:
             v = changes[k]
             if not _is_int(v) or not (lo <= v <= hi):
-                raise HttpError(400, f"{k} debe ser un entero entre {lo} y {hi}")
+                raise HttpError(400, f"{k} must be an integer between {lo} and {hi}")
     if "extra_leaderboard_ids" in changes:
         v = changes["extra_leaderboard_ids"]
         if not isinstance(v, list) or not all(_is_int(x) for x in v):
-            raise HttpError(400, "extra_leaderboard_ids debe ser una lista de enteros")
+            raise HttpError(400, "extra_leaderboard_ids must be a list of integers")
     if "stats_match_mode" in changes:
         if changes["stats_match_mode"] not in MATCH_MODES:
-            raise HttpError(400, "stats_match_mode debe ser " + " o ".join(f"«{m}»" for m in MATCH_MODES))
+            raise HttpError(400, "stats_match_mode must be " + " or ".join(f"«{m}»" for m in MATCH_MODES))
     if "api_key" in changes:
         v = changes["api_key"]
         if not isinstance(v, str) or len(v) > 200:
-            raise HttpError(400, "api_key debe ser texto de 200 caracteres como máximo")
+            raise HttpError(400, "api_key must be text of at most 200 characters")
     return changes
 
 
@@ -180,8 +180,8 @@ class App:
         return demo.counts(self.con())
 
     def update_now(self, req):
-        started = self.updater.start("manual (botón)")
-        return {"started": started, "message": "Actualización iniciada" if started else "Ya hay una actualización en curso"}
+        started = self.updater.start("manual (button)")
+        return {"started": started, "message": "Update started" if started else "An update is already running"}
 
     # -------------------------------------------------------------- jugadores
     def players_all(self, req):
@@ -192,21 +192,21 @@ class App:
         with_duos = req.query.get("duos", ["1"])[0] != "0"
         p = players.profile(con, self.client, int(pid), analysis.current_lid(con), with_duos=with_duos)
         if not p:
-            raise HttpError(404, "Jugador no encontrado")
+            raise HttpError(404, "Player not found")
         return p
 
     def player_manual(self, req, pid):
         try:
             return players.update_manual(self.con(), int(pid), req.json())
         except KeyError:
-            raise HttpError(404, "Jugador no encontrado")
+            raise HttpError(404, "Player not found")
         except ValueError as e:
             raise HttpError(400, str(e))
 
     def player_link(self, req, pid):
         aid = to_account_id(req.json().get("account"))
         if not aid:
-            raise HttpError(400, "ID de cuenta no válido (número, [U:1:N], steam64 o URL de perfil)")
+            raise HttpError(400, "Invalid account ID (number, [U:1:N], steam64 or profile URL)")
         players.link_account(self.con(), int(pid), aid)
         return players.profile(self.con(), None, int(pid), analysis.current_lid(self.con()), with_duos=False)
 
@@ -222,7 +222,7 @@ class App:
         body = req.json()
         aid = to_account_id(body.get("account"))
         if not aid:
-            raise HttpError(400, "ID de cuenta no válido")
+            raise HttpError(400, "Invalid account ID")
         con = self.con()
         pid = players.player_of(con, aid)
         if pid is None:
@@ -300,7 +300,7 @@ class App:
         minp = _qint(req, "min_players", "3")
         days = _qint(req, "days", "60")
         if not team and not extra:
-            raise HttpError(400, "Falta el equipo")
+            raise HttpError(400, "Team is missing")
         return analysis.recent_team_matches(self.con(), self.client, team, extra, minp, days)
 
     # ---------------------------------------------------------------- ajustes
@@ -316,7 +316,7 @@ class App:
         if changes.get("api_key") == "••••":
             changes.pop("api_key")
         if "region" in changes and changes["region"] not in ("Europe", "Asia", "NAmerica", "SAmerica", "Oceania"):
-            raise HttpError(400, "Región no válida")
+            raise HttpError(400, "Invalid region")
         validate_config(changes)
         cfg = config.update(changes)
         if "api_key" in changes:
@@ -331,7 +331,7 @@ class App:
         body = req.json()
         roles = body.get("roles")
         if not isinstance(roles, dict) or not all(isinstance(v, list) for v in roles.values()):
-            raise HttpError(400, "Formato: {roles: {Rol: [héroes]}}")
+            raise HttpError(400, "Format: {roles: {Role: [heroes]}}")
         with open(config.ROLES_PATH, encoding="utf-8") as f:
             data = json.load(f)
         data["roles"] = {k.strip(): [str(h).strip() for h in v if str(h).strip()] for k, v in roles.items() if k.strip()}
@@ -435,17 +435,17 @@ class App:
             colores = None
             if body.get("colores") is not None:
                 if not isinstance(body["colores"], dict):
-                    raise ValueError("colores debe ser un objeto")
+                    raise ValueError("colores must be an object")
                 colores = {}
                 for k, v in body["colores"].items():
                     if not isinstance(v, dict):
-                        raise ValueError("cada color debe ser un objeto")
+                        raise ValueError("each color must be an object")
                     color = str(v["color"])
                     if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
-                        raise ValueError(f"color no válido: {color}")
+                        raise ValueError(f"invalid color: {color}")
                     colores[int(k)] = {"color": color, "alias": str(v.get("alias", ""))}
         except (KeyError, ValueError, TypeError) as e:
-            raise HttpError(400, f"Mapeo no válido: {e}")
+            raise HttpError(400, f"Invalid mapping: {e}")
         matches.save_objective_map(objs, lanes, colores=colores)
         return self.objmap_get(req)
 
@@ -478,12 +478,12 @@ class App:
 
     def map_calibrate(self, req):
         if not self._calib_lock.acquire(blocking=False):
-            raise HttpError(409, "Ya hay una calibración en curso")
+            raise HttpError(409, "A calibration is already running")
         try:
             con = self.con()
             ids = [r[0] for r in con.execute("SELECT match_id FROM matches ORDER BY stored_at DESC LIMIT 30")]
             if not ids:
-                raise HttpError(400, "Carga al menos una partida para calibrar")
+                raise HttpError(400, "Load at least one match to calibrate")
             datas = [matches.load(i) for i in ids]
             pts = minimap.alive_points(datas, step=5)
             fitted = minimap.fit(pts)
@@ -500,20 +500,20 @@ class App:
         else:
             raw = body.get("calibration") or {}
             if not isinstance(raw, dict):
-                raise HttpError(400, "Calibración no válida")
+                raise HttpError(400, "Invalid calibration")
             cal = {}
             for k in ("x_min", "x_max", "y_min", "y_max"):
                 v = raw.get(k)
                 if isinstance(v, bool) or not isinstance(v, (int, float)):
-                    raise HttpError(400, f"Falta {k}")
+                    raise HttpError(400, f"{k} is missing")
                 cal[k] = v
             for k in ("invert_x", "invert_y"):
                 if k in raw:
                     if not isinstance(raw[k], bool):
-                        raise HttpError(400, f"{k} debe ser booleano")
+                        raise HttpError(400, f"{k} must be a boolean")
                     cal[k] = raw[k]
             if not (cal["x_min"] < cal["x_max"] and cal["y_min"] < cal["y_max"]):
-                raise HttpError(400, "Se requiere x_min < x_max e y_min < y_max")
+                raise HttpError(400, "Requires x_min < x_max and y_min < y_max")
         minimap.save_calibration(cal)
         return cal
 
@@ -530,13 +530,13 @@ class App:
             try:
                 ids.append(int(str(x).strip()))
             except ValueError:
-                raise HttpError(400, f"ID de partida no válido: {x}")
+                raise HttpError(400, f"Invalid match ID: {x}")
         if not ids:
-            raise HttpError(400, "Indica al menos una partida")
+            raise HttpError(400, "Provide at least one match")
         con = self.con()
         roster = analysis.roster(con, team, extra) if team else set(extra)
         if not roster and not body.get("side_overrides"):
-            raise HttpError(400, "La plantilla está vacía: elige un equipo de equipos.txt o añade cuentas")
+            raise HttpError(400, "The roster is empty: pick a team from equipos.txt or add accounts")
         datas, errors = [], []
         for mid in dict.fromkeys(ids):
             try:
@@ -568,9 +568,9 @@ class App:
         from . import importer
         path = str(req.json().get("path") or "").strip().strip('"')
         if not path or not os.path.isfile(path):
-            raise HttpError(400, "No existe ese archivo")
+            raise HttpError(400, "That file does not exist")
         if not path.lower().endswith(".db"):
-            raise HttpError(400, "El archivo debe tener extensión .db")
+            raise HttpError(400, "The file must have a .db extension")
         dry = bool(req.json().get("dry_run"))
         return importer.import_db(self.con(), path, dry_run=dry)
 
@@ -591,9 +591,9 @@ class Request:
         try:
             v = json.loads(self.body or b"{}")
         except ValueError:
-            raise HttpError(400, "El cuerpo no es JSON válido")
+            raise HttpError(400, "The request body is not valid JSON")
         if not isinstance(v, dict):
-            raise HttpError(400, "Se esperaba un objeto JSON")
+            raise HttpError(400, "A JSON object was expected")
         return v
 
 
@@ -638,7 +638,7 @@ def make_handler(app):
         def _check_host(self):
             host = (self.headers.get("Host") or "").lower()
             if host not in allowed_hosts:
-                self._error(403, "Host no permitido")
+                self._error(403, "Host not allowed")
                 return False
             return True
 
@@ -648,11 +648,11 @@ def make_handler(app):
             u = urllib.parse.urlsplit(self.path)
             if u.path.startswith("/api/"):
                 if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
-                    return self._error(403, "Petición entre sitios no permitida")
+                    return self._error(403, "Cross-site request not allowed")
                 return self._api("GET", u, b"")
             if u.path.startswith("/img/"):
                 if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
-                    return self._error(403, "Petición entre sitios no permitida")
+                    return self._error(403, "Cross-site request not allowed")
                 return self._image(u.path)
             return self._static(u.path)
 
@@ -663,18 +663,18 @@ def make_handler(app):
                 return
             ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             if ctype != "application/json":
-                return self._error(415, "Solo se aceptan escrituras en JSON (Content-Type: application/json)")
+                return self._error(415, "Only JSON writes are accepted (Content-Type: application/json)")
             origin = self.headers.get("Origin")
             if origin and origin.lower() not in allowed_origins:
-                return self._error(403, "Origen no permitido")
+                return self._error(403, "Origin not allowed")
             try:
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
-                return self._error(400, "Content-Length no válido")
+                return self._error(400, "Invalid Content-Length")
             if n < 0:
-                return self._error(400, "Content-Length no válido")
+                return self._error(400, "Invalid Content-Length")
             if n > MAX_BODY:
-                return self._error(413, "Cuerpo demasiado grande")
+                return self._error(413, "Request body too large")
             body = self.rfile.read(n) if n else b""
             self._api("POST", urllib.parse.urlsplit(self.path), body)
 
@@ -693,29 +693,29 @@ def make_handler(app):
                 except HttpError as e:
                     return self._error(e.status, str(e))
                 except ApiError as e:
-                    return self._error(502, f"Error de la API de Deadlock: {e}")
+                    return self._error(502, f"Deadlock API error: {e}")
                 except Exception as e:
                     traceback.print_exc()
                     print(f"[server] error en {method} {u.path}: {type(e).__name__}: {e}")
-                    return self._error(500, "Error interno del servidor")
-            self._error(404, "Ruta no encontrada")
+                    return self._error(500, "Internal server error")
+            self._error(404, "Route not found")
 
         def _image(self, path):
             origin, _, rest = path[len("/img/"):].partition("/")
             res = images.get(origin, urllib.parse.unquote(rest))
             if res is None:
-                return self._error(404, "Imagen no disponible")
+                return self._error(404, "Image not available")
             self._send(200, res[0], res[1], headers={"Cache-Control": "public, max-age=604800"})
 
         def _static(self, path):
             if path in ("/", "/index.html"):
                 path = "/static/index.html"
             if not path.startswith("/static/"):
-                return self._error(404, "No encontrado")
+                return self._error(404, "Not found")
             rel = urllib.parse.unquote(path[len("/static/"):])
             fp = os.path.realpath(os.path.join(config.STATIC_DIR, rel))
             if not fp.startswith(os.path.realpath(config.STATIC_DIR) + os.sep) or not os.path.isfile(fp):
-                return self._error(404, "No encontrado")
+                return self._error(404, "Not found")
             ctype = mimetypes.guess_type(fp)[0] or "application/octet-stream"
             if ctype.startswith("text/") or ctype.endswith("javascript") or ctype.endswith("json"):
                 ctype += "; charset=utf-8"

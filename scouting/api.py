@@ -31,7 +31,7 @@ class _SameHostRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         u = urllib.parse.urlsplit(newurl)
         if u.scheme != "https" or u.hostname != ALLOWED_HOST:
-            raise urllib.error.HTTPError(newurl, code, f"Redirección a host no permitido: {u.hostname}", headers, fp)
+            raise urllib.error.HTTPError(newurl, code, f"Redirect to a disallowed host: {u.hostname}", headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -41,7 +41,7 @@ _opener = urllib.request.build_opener(_SameHostRedirect)
 def _read_capped(r, limit=MAX_RESPONSE):
     body = r.read(limit + 1)
     if len(body) > limit:
-        raise ApiError(0, "respuesta demasiado grande")
+        raise ApiError(0, "response too large")
     return body
 
 
@@ -80,7 +80,7 @@ class Client:
                         d = zlib.decompressobj(16 + zlib.MAX_WBITS)
                         body = d.decompress(body, MAX_RESPONSE + 1)
                         if len(body) > MAX_RESPONSE or d.unconsumed_tail:
-                            raise ApiError(0, "respuesta demasiado grande")
+                            raise ApiError(0, "response too large")
                     return body
             except urllib.error.HTTPError as e:
                 msg = e.read()[:300].decode("utf-8", "replace")
@@ -107,7 +107,7 @@ class Client:
                     raise ApiError(0, str(e))
                 time.sleep(delay)
                 delay = min(delay * 2, 120)
-        raise ApiError(0, "sin respuesta")
+        raise ApiError(0, "no response")
 
     def get_json(self, path, params=None, timeout=120, min_429_wait=0):
         return json.loads(self.get_raw(path, params, timeout, min_429_wait))

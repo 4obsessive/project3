@@ -152,7 +152,7 @@ class Flow(unittest.TestCase):
         self.assertEqual(by["Alfa"]["stats"]["matches"], 32)
         self.assertEqual(by["Alfa"]["roles"], ["Catcher"])
         # 32 partidas: un intervalo de ±17pp no es fiabilidad «Alta»
-        self.assertEqual(by["Alfa"]["reliability"], "Baja")
+        self.assertEqual(by["Alfa"]["reliability"], "Low")
         # jugador de equipo fuera de la leaderboard: dos cuentas en la misma línea = un jugador, stats sumadas
         libre = by["Libre"]
         self.assertEqual(len(libre["accounts"]), 2)
@@ -225,7 +225,7 @@ class Flow(unittest.TestCase):
         self.assertEqual(out["climbers"][0]["delta"], 2)
         self.assertEqual([n["player_id"] for n in out["new"]], [p[3]])
         out = analysis.climbers(con, 30)
-        self.assertIn("8.0 días", out["warning"])
+        self.assertIn("8.0 days", out["warning"])
 
 
 if __name__ == "__main__":

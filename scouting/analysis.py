@@ -27,8 +27,8 @@ def climbers(con, days, metric="rel"):
            "fallers": [], "dropped": [], "warning": None, "size_warning": None,
            "badge_climbers": badge_climbers(con, days)}
     if len(snaps) < 2:
-        out["warning"] = ("Aún no hay historial suficiente: la API no da el ranking pasado, así que se acumula desde la primera "
-                          "descarga. Vuelve cuando haya al menos dos snapshots separados en el tiempo.")
+        out["warning"] = ("Not enough history yet: the API does not provide past rankings, so it builds up from the first "
+                          "download. Come back once there are at least two snapshots apart in time.")
         return out
     latest = snaps[-1]
     target = latest["taken_at"] - days * 86400
@@ -38,12 +38,12 @@ def climbers(con, days, metric="rel"):
     else:
         base = snaps[0]
         have = (latest["taken_at"] - base["taken_at"]) / 86400
-        out["warning"] = f"Solo hay {have:.1f} días de historial (primer snapshot). Se compara con ese en lugar de con hace {days} días."
+        out["warning"] = f"Only {have:.1f} days of history (first snapshot). Comparing against that one instead of {days} days ago."
     out["base_taken_at"], out["latest_taken_at"] = base["taken_at"], latest["taken_at"]
     out["base_entries"], out["latest_entries"] = base["n_entries"], latest["n_entries"]
     if base["n_entries"] and abs(latest["n_entries"] - base["n_entries"]) / base["n_entries"] > 0.15:
-        out["size_warning"] = (f"La leaderboard ha cambiado de tamaño ({base['n_entries']} → {latest['n_entries']} entradas): "
-                               "las entradas y salidas pueden deberse a eso y no a cambios de nivel.")
+        out["size_warning"] = (f"The leaderboard changed size ({base['n_entries']} → {latest['n_entries']} entries): "
+                               "entries and exits may be due to that rather than changes in skill.")
 
     def ranks(sid):
         return {r[0]: r[1] for r in con.execute("SELECT player_id, MIN(rank) FROM lb_entries WHERE snapshot_id=? AND player_id IS NOT NULL GROUP BY player_id", (sid,))}

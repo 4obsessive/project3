@@ -187,8 +187,8 @@ def build_all(con, player_ids=None):
             main_roles, breakdown = roles_mod.player_roles(weights, roles_by_hero, threshold)
             role_text = roles_mod.breakdown_text(breakdown)
         else:
-            main_roles, breakdown, role_text = [], [], "muestra insuficiente"
-        named = [(rl, v) for rl, v in breakdown if rl != "Sin rol"]
+            main_roles, breakdown, role_text = [], [], "insufficient sample"
+        named = [(rl, v) for rl, v in breakdown if rl != "No role"]
         manual = con.execute("SELECT * FROM manual WHERE player_id=?", (pid,)).fetchone()
         team, team_src = teams.get(pid, (None, None))
         pr = ranks.get(pid, {})
