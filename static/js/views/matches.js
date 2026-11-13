@@ -79,7 +79,9 @@ async function showMatch(root, id, ctx) {
     'Minimap': () => minimapa(body, m, tname),
     'Explorer': () => renderExplorer(body, m.match_id),
   };
+  const OLD_TABS = { 'Resumen': 'Summary', 'Objetivos': 'Objectives', 'Midboss': 'Midboss', 'Fase de líneas': 'Laning phase', 'Jugadores': 'Players', 'Economía': 'Economy', 'Minimapa': 'Minimap', 'Explorador': 'Explorer' }; /* es-ok */
   let current = store.get('matchTab', 'Summary');
+  current = OLD_TABS[current] || current;
   if (!views[current]) current = 'Summary';
   const select = b => {
     current = b.dataset.tab; store.set('matchTab', current);
@@ -106,6 +108,7 @@ async function showMatch(root, id, ctx) {
   // when the demo finishes only the open tab is repainted, and only if it depends on it (Objectives: KOTH; Midboss)
   scheduleDemoRefresh(root, id, gen, m, () => {
     if (!DEMO_TABS.has(current)) return;
+    if (current === 'Minimap' && minimapDraw) { minimapDraw(); return; } // keep the user's filters
     body.innerHTML = ''; views[current]();
   });
 }
@@ -113,6 +116,7 @@ async function showMatch(root, id, ctx) {
 const tabId = name => 'tab-' + name.toLowerCase().replace(/\s+/g, '-');
 let heroById = new Map();
 let demoTimer = null;
+let minimapDraw = null; // draw() of the open Minimap tab (reads m.fights live)
 let matchGen = 0;
 const DEMO_TABS = new Set(['Objectives', 'Midboss', 'Laning phase', 'Players', 'Minimap']);
 const LANE_POLLS = 15; // demo ready but no lane data: at most 15 polls (5 min)
@@ -151,7 +155,9 @@ function decorative(node) { node.setAttribute('aria-hidden', 'true'); if (node.t
 function barCol(scale, c) {
   const max = Math.max(0, ...scale.map(r => r[c.key]).filter(v => typeof v === 'number' && isFinite(v)).map(Math.abs));
   return { ...c, render: r => {
-    const v = r[c.key], txt = formatValue(v, c.fmt);
+    const v = r[c.key];
+    if (v == null) return '–';
+    const txt = formatValue(v, c.fmt);
     if (typeof v !== 'number' || !isFinite(v) || !max) return txt;
     return el('span', { class: 'cell-bar compact' + (v < 0 ? ' neg' : '') },
       el('span', { class: 'cell-bar-track', 'aria-hidden': 'true' }, el('span', { class: 'cell-bar-fill', style: { width: Math.min(100, 100 * Math.abs(v) / max) + '%' } })),
@@ -587,6 +593,7 @@ function economia(root, m, tname) {
 }
 
 async function minimapa(root, m, tname) {
+  minimapDraw = null;
   const status = el('div', {}, spinner('Decoding positions…'));
   root.append(status);
   let pos, info;
@@ -667,4 +674,5 @@ async function minimapa(root, m, tname) {
   }
   await map.ready;
   draw();
+  minimapDraw = draw;
 }

@@ -51,6 +51,7 @@ function heroesCell(r, c) {
 // mini barra en la celda: valor / máximo (en valor absoluto) de la columna; el número sigue al lado
 function barCell(r, c, max) {
   const v = r[c.key];
+  if (v == null) return '–';
   const txt = formatValue(v, c.fmt);
   if (typeof v !== 'number' || !isFinite(v) || !max) return txt;
   const pct = Math.max(0, Math.min(100, 100 * Math.abs(v) / max));

@@ -48,6 +48,9 @@ async function route() {
   const [pathPart, qs] = raw.split('?');
   const [name0, ...params] = pathPart.split('/');
   const name = LEGACY_ROUTES[name0] || name0;
+  if (name !== name0) { // legacy Spanish hash: rewrite it so the rest of the app sees the English name
+    history.replaceState(null, '', '#' + name + (params.length ? '/' + params.join('/') : '') + (qs ? '?' + qs : ''));
+  }
   const view = VIEWS[name] ? name : 'home';
   ctx.params = params.map(decodeURIComponent);
   ctx.query = Object.fromEntries(new URLSearchParams(qs || ''));
