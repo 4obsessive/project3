@@ -355,11 +355,11 @@ class App:
         try:
             mid = int(str(mid).strip())
         except (TypeError, ValueError):
-            raise HttpError(400, "ID de partida no válido")
+            raise HttpError(400, "Invalid match ID")
         try:
             matches.fetch(self.con(), self.client, mid)
         except ApiError as e:
-            raise HttpError(502 if e.status != 404 else 404, f"La API no devolvió la partida {mid}: {e}")
+            raise HttpError(502 if e.status != 404 else 404, f"The API did not return match {mid}: {e}")
         return {"match_id": mid}
 
     def match_upload(self, req):
@@ -376,7 +376,7 @@ class App:
         try:
             return matches.load(int(mid))
         except KeyError:
-            raise HttpError(404, f"Partida {mid} no guardada")
+            raise HttpError(404, f"Match {mid} is not saved")
 
     def match_overview(self, req, mid):
         d = self._load(mid)
@@ -414,7 +414,7 @@ class App:
 
     def match_raw(self, req, mid):
         if not matches.is_stored(int(mid)):
-            raise HttpError(404, "Partida no guardada")
+            raise HttpError(404, "Match is not saved")
         return RawJson(matches.raw_gz(int(mid)), gzipped=True)
 
     def match_delete(self, req, mid):

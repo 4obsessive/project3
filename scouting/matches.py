@@ -38,11 +38,11 @@ def parse(raw):
     try:
         d = json.loads(raw)
     except ValueError as e:
-        raise MatchError(f"El archivo no es JSON válido: {e}")
+        raise MatchError(f"The file is not valid JSON: {e}")
     if isinstance(d, dict) and "match_info" not in d and "players" in d and "match_id" in d:
         d = {"match_info": d}
     if not isinstance(d, dict) or not isinstance(d.get("match_info"), dict) or "match_id" not in d["match_info"]:
-        raise MatchError("No parece una partida de deadlock-api (falta match_info.match_id)")
+        raise MatchError("This does not look like a deadlock-api match (match_info.match_id is missing)")
     return d
 
 

@@ -1105,3 +1105,11 @@ nav.toc { display: block; overflow: visible; width: auto; }
   .cell-bar-fill { background: #8a5d00; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .hero-stack .portrait, .hero-stack .avatar { box-shadow: none; }
 }
+
+/* match view: compact in-cell bars for wide tables, headline cards, objective icons in lists */
+.cell-bar.compact { min-width: 64px; }
+.cell-bar.compact .cell-bar-track { min-width: 24px; max-width: 48px; }
+.gank-line { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.koth-list li > .obj-img.sm { width: 20px; height: 20px; flex: none; }
+.mb-head > .obj-img.sm { width: 22px; height: 22px; flex: none; }
+.tab-pane > .stat-cards, .panel > .stat-cards { margin-bottom: 14px; }

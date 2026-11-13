@@ -16,7 +16,7 @@ try:
 except ImportError:  # Python < 3.14
     zstd = None
     AVAILABLE = False
-UNAVAILABLE_REASON = "no disponible: requiere Python 3.14+"
+UNAVAILABLE_REASON = "not available: requires Python 3.14+"
 
 TICK_RATE = 64
 # El demo numera los equipos 2 y 3; la API de partidas usa 0 y 1.
@@ -276,7 +276,7 @@ class DemoClient:
         """GET, o POST si hay `body`. Solo un 404 del POST con el mensaje conocido significa «sin demo»."""
         u = urllib.parse.urlsplit(url)
         if u.scheme != "https" or u.hostname not in (QUERY_HOST, RESULT_HOST):
-            raise DemoFatal(f"host no permitido: {u.hostname}")
+            raise DemoFatal(f"host not allowed: {u.hostname}")
         headers = {"User-Agent": api.USER_AGENT}
         if body is not None:
             headers["Content-Type"] = "application/json"
@@ -302,7 +302,7 @@ class DemoClient:
                 raise NoDemo()
             raise DemoError(f"HTTP {e.code}: {msg}")
         if len(raw) > MAX_RESULT:
-            raise DemoFatal("respuesta demasiado grande")
+            raise DemoFatal("response too large")
         return raw
 
     def run_queries(self, match_id, only=None):
@@ -314,7 +314,7 @@ class DemoClient:
             job = json.loads(self._request(QUERY_URL, {"match_id": int(match_id), "query": sql, "format": "ndjson"}))
             job_id = job.get("job_id")
             if not job_id:
-                raise DemoError("la API no devolvió job_id")
+                raise DemoError("the API returned no job_id")
             results[nombre] = self._esperar(job_id)
         return results
 
@@ -327,12 +327,12 @@ class DemoClient:
                 ru = st.get("result_url") or ""
                 u = urllib.parse.urlsplit(ru)
                 if u.scheme != "https" or u.hostname != RESULT_HOST:
-                    raise DemoFatal(f"result_url de un host no permitido: {u.hostname}")
+                    raise DemoFatal(f"result_url from a host that is not allowed: {u.hostname}")
                 return self._parse(self._request(ru))
             if estado == "failed":
-                raise DemoError(f"consulta fallida: {st.get('error')}")
+                raise DemoError(f"query failed: {st.get('error')}")
             self.sleep(POLL_EVERY_S)
-        raise DemoError("tiempo de espera agotado")
+        raise DemoError("timed out")
 
     @staticmethod
     def _parse(raw):
@@ -342,13 +342,13 @@ class DemoClient:
             dec = zstd.ZstdDecompressor()
             crudo = dec.decompress(raw, max_length=MAX_DECOMPRESSED + 1)
             if len(crudo) > MAX_DECOMPRESSED:
-                raise DemoError("resultado descomprimido demasiado grande")
+                raise DemoError("decompressed result too large")
             if not dec.eof:
-                raise DemoError("resultado truncado")
+                raise DemoError("result truncated")
             texto = crudo.decode("utf-8")
             return [json.loads(l) for l in texto.splitlines() if l.strip()]
         except (ValueError, zstd.ZstdError) as e:
-            raise DemoError(f"resultado ilegible: {e}")
+            raise DemoError(f"unreadable result: {e}")
 
 
 # ------------------------------------------------------------------ cola
@@ -369,7 +369,7 @@ def summary(con, match_id):
         return {"state": "unavailable", "reason": UNAVAILABLE_REASON}
     r = con.execute("SELECT state, summary, raw, error FROM demo_jobs WHERE match_id=?", (int(match_id),)).fetchone()
     if r is None:
-        return {"state": "pending", "reason": "aún sin consultar"}
+        return {"state": "pending", "reason": "not queried yet"}
     if r["state"] == "done" and r["summary"]:
         s = json.loads(r["summary"])
         if s.get("version") != SUMMARY_VERSION and r["raw"]:
@@ -379,10 +379,10 @@ def summary(con, match_id):
                 con.execute("UPDATE demo_jobs SET summary=? WHERE match_id=?", (_json(s), int(match_id)))
         return {"state": "done", **s}
     if r["state"] == "nodemo":
-        return {"state": "nodemo", "reason": "la API no tiene el demo de esta partida"}
+        return {"state": "nodemo", "reason": "the API has no demo for this match"}
     if r["state"] == "error":
-        return {"state": "error", "reason": r["error"] or "error al consultar el demo"}
-    return {"state": "pending", "reason": "en cola"}
+        return {"state": "error", "reason": r["error"] or "error while fetching the demo"}
+    return {"state": "pending", "reason": "queued"}
 
 
 def lane_data(con, match_id):
@@ -518,7 +518,7 @@ class Worker:
             try:
                 resumen = summarize(res)
             except Exception as e:  # determinista: reintentar solo gastaría presupuesto
-                raise DemoFatal(f"no se pudo resumir el demo: {e!r}")
+                raise DemoFatal(f"could not summarise the demo: {e!r}")
             lane_state = None
             if "lane_damage" in res:
                 if res["lane_damage"]:

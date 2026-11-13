@@ -1,5 +1,5 @@
 import { api, getHeroes } from '../api.js';
-import { el, fmt, dataTable, toast, spinner, csvDownload, store, errorBox } from '../util.js';
+import { el, fmt, formatValue, dataTable, toast, spinner, csvDownload, store, errorBox } from '../util.js';
 import { MapView, COLORS, legend, loadMapInfo } from '../map.js';
 import { timeline } from '../charts.js';
 import { renderExplorer } from './explorer.js';
@@ -9,38 +9,38 @@ import { heroPortrait, objectiveImg, objectiveSrc, laneStyle, laneChip } from '.
 import { matchRow } from './home.js';
 
 export async function render(root, ctx) {
-  const idInput = el('input', { id: 'match-id', inputmode: 'numeric', placeholder: 'ID de partida', 'aria-label': 'ID de partida', style: { width: '140px' } });
+  const idInput = el('input', { id: 'match-id', inputmode: 'numeric', placeholder: 'Match ID', 'aria-label': 'Match ID', style: { width: '140px' } });
   const fileInput = el('input', { type: 'file', id: 'match-file', class: 'sr-only', accept: '.json,application/json' });
   const list = el('div');
   const detail = el('div');
   const load = async () => {
     const id = idInput.value.trim();
     if (!id) return;
-    btn.disabled = true; btn.textContent = 'Descargando…';
+    btn.disabled = true; btn.textContent = 'Downloading…';
     try { await api.post('/api/matches/load', { match_id: id }); await refresh(); location.hash = `#partidas/${id}`; }
     catch (e) { toast(e.message, true); }
-    finally { btn.disabled = false; btn.textContent = 'Cargar'; }
+    finally { btn.disabled = false; btn.textContent = 'Load'; }
   };
-  const btn = el('button', { class: 'primary', onclick: load }, 'Cargar');
+  const btn = el('button', { class: 'primary', onclick: load }, 'Load');
   idInput.addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
   fileInput.addEventListener('change', async () => {
     const f = fileInput.files[0]; if (!f) return;
-    try { const r = await api.post('/api/matches/upload', await f.text()); toast(`Partida ${r.match_id} guardada`); await refresh(); location.hash = `#partidas/${r.match_id}`; }
+    try { const r = await api.post('/api/matches/upload', await f.text()); toast(`Match ${r.match_id} saved`); await refresh(); location.hash = `#partidas/${r.match_id}`; }
     catch (e) { toast(e.message, true); }
     fileInput.value = '';
   });
   root.append(el('div', { class: 'split' },
     el('div', {},
-      el('div', { class: 'panel' }, el('h3', {}, 'Cargar partida'), el('div', { class: 'row' }, idInput, btn),
-        el('div', { class: 'muted small', style: { margin: '10px 0 4px' } }, 'o sube su JSON (metadata de deadlock-api):'),
-        el('label', { for: 'match-file', class: 'filepick' }, icon('upload'), el('span', {}, 'Elegir archivo JSON…')), fileInput),
-      el('div', { class: 'panel' }, el('h3', {}, 'Guardadas'), list)),
+      el('div', { class: 'panel' }, el('h3', {}, 'Load match'), el('div', { class: 'row' }, idInput, btn),
+        el('div', { class: 'muted small', style: { margin: '10px 0 4px' } }, 'or upload its JSON (deadlock-api metadata):'),
+        el('label', { for: 'match-file', class: 'filepick' }, icon('upload'), el('span', {}, 'Choose JSON file…')), fileInput),
+      el('div', { class: 'panel' }, el('h3', {}, 'Saved'), list)),
     detail));
 
   async function refresh() {
     const ms = await api.get('/api/matches');
     list.innerHTML = '';
-    if (!ms.length) list.append(el('div', { class: 'muted small' }, 'Ninguna todavía.'));
+    if (!ms.length) list.append(el('div', { class: 'muted small' }, 'None yet.'));
     for (const m of ms) {
       list.append(matchRow(m));
     }
@@ -48,39 +48,39 @@ export async function render(root, ctx) {
   await refresh();
   const id = ctx.params[0];
   if (id) showMatch(detail, id, ctx);
-  else detail.append(el('div', { class: 'panel empty' }, icon('partidas', 'big'), el('p', {}, 'Elige una partida guardada o carga una nueva por ID para ver su marcador, la diferencia de oro y el minimapa.')));
+  else detail.append(el('div', { class: 'panel empty' }, icon('partidas', 'big'), el('p', {}, 'Pick a saved match or load a new one by ID to see its scoreboard, gold difference and minimap.')));
 }
 
 async function showMatch(root, id, ctx) {
   clearTimeout(demoTimer); demoTimer = null;
   const gen = ++matchGen;
-  root.innerHTML = ''; root.append(spinner('Cargando partida…'));
+  root.innerHTML = ''; root.append(spinner('Loading match…'));
   let m;
-  try { m = await api.get(`/api/matches/${id}`); } catch (e) { if (gen !== matchGen) return; root.innerHTML = ''; root.append(errorBox(e.message, () => showMatch(root, id, ctx), 'No se pudo cargar la partida')); return; }
+  try { m = await api.get(`/api/matches/${id}`); } catch (e) { if (gen !== matchGen) return; root.innerHTML = ''; root.append(errorBox(e.message, () => showMatch(root, id, ctx), 'Could not load the match')); return; }
   if (gen !== matchGen) return;
   try { const hs = await getHeroes(); heroById = new Map(hs.map(h => [h.id, h])); } catch { heroById = new Map(); }
-  if (gen !== matchGen) return; // otra partida se abrió mientras tanto
+  if (gen !== matchGen) return; // another match was opened in the meantime
   root.innerHTML = '';
   const TN = m.team_names;
   const tname = t => `${TN[t]} (${t})`;
-  const verified = m.team_names_verified ? '' : ' · nombres de lado según fuentes de terceros (equipo 0 = base abajo, verificado)';
+  const verified = m.team_names_verified ? '' : ' · side names according to third-party sources (team 0 = base at the bottom, verified)';
   const head = scoreboard(m, TN, verified);
   const gold = goldPanel(m, tname);
-  const tabs = el('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Secciones de la partida' });
+  const tabs = el('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Match sections' });
   const body = el('div', { class: 'panel', role: 'tabpanel', id: 'match-tabpanel', tabindex: '0' });
   root.append(head, gold, tabs, body);
   const views = {
-    'Resumen': () => resumen(body, m, tname, ctx),
-    'Objetivos': () => objetivos(body, m, tname),
+    'Summary': () => resumen(body, m, tname, ctx),
+    'Objectives': () => objetivos(body, m, tname),
     'Midboss': () => midboss(body, m, tname),
-    'Fase de líneas': () => faseLineas(body, m, tname),
-    'Jugadores': () => jugadores(body, m, tname),
-    'Economía': () => economia(body, m, tname),
-    'Minimapa': () => minimapa(body, m, tname),
-    'Explorador': () => renderExplorer(body, m.match_id),
+    'Laning phase': () => faseLineas(body, m, tname),
+    'Players': () => jugadores(body, m, tname),
+    'Economy': () => economia(body, m, tname),
+    'Minimap': () => minimapa(body, m, tname),
+    'Explorer': () => renderExplorer(body, m.match_id),
   };
-  let current = store.get('matchTab', 'Resumen');
-  if (!views[current]) current = 'Resumen';
+  let current = store.get('matchTab', 'Summary');
+  if (!views[current]) current = 'Summary';
   const select = b => {
     current = b.dataset.tab; store.set('matchTab', current);
     for (const x of tabs.children) { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-selected', String(on)); x.tabIndex = on ? 0 : -1; }
@@ -89,11 +89,11 @@ async function showMatch(root, id, ctx) {
   };
   for (const name of Object.keys(views)) {
     const on = name === current;
-    const b = el('button', { type: 'button', role: 'tab', id: 'tab-' + name.toLowerCase(), 'aria-controls': 'match-tabpanel', 'aria-selected': String(on), tabindex: on ? '0' : '-1', class: on ? 'active' : '', onclick: () => select(b) }, name);
+    const b = el('button', { type: 'button', role: 'tab', id: tabId(name), 'aria-controls': 'match-tabpanel', 'aria-selected': String(on), tabindex: on ? '0' : '-1', class: on ? 'active' : '', onclick: () => select(b) }, name);
     b.dataset.tab = name;
     tabs.append(b);
   }
-  // flechas para moverse entre pestañas (patrón ARIA tabs)
+  // arrow keys move between tabs (ARIA tabs pattern)
   tabs.addEventListener('keydown', e => {
     const list = [...tabs.children], i = list.indexOf(document.activeElement);
     if (i < 0) return;
@@ -101,26 +101,27 @@ async function showMatch(root, id, ctx) {
     if (j < 0) return;
     e.preventDefault(); list[j].focus(); select(list[j]);
   });
-  body.setAttribute('aria-labelledby', 'tab-' + current.toLowerCase());
+  body.setAttribute('aria-labelledby', tabId(current));
   views[current]();
-  // al terminar el demo solo se repinta la pestaña abierta si depende de él (Objetivos: KOTH; Midboss)
+  // when the demo finishes only the open tab is repainted, and only if it depends on it (Objectives: KOTH; Midboss)
   scheduleDemoRefresh(root, id, gen, m, () => {
     if (!DEMO_TABS.has(current)) return;
     body.innerHTML = ''; views[current]();
   });
 }
 
+const tabId = name => 'tab-' + name.toLowerCase().replace(/\s+/g, '-');
 let heroById = new Map();
 let demoTimer = null;
 let matchGen = 0;
-const DEMO_TABS = new Set(['Objetivos', 'Midboss', 'Fase de líneas', 'Jugadores', 'Minimapa']);
-const LANE_POLLS = 15; // con el demo listo pero sin datos de líneas: como mucho 15 consultas (5 min)
-/** Mientras el demo está pendiente, consulta en segundo plano /api/matches/{id}/demo cada 20 s (sin repintar);
- *  cuando deja de estar pendiente actualiza m.demo/m.comeback y llama a onReady. Se detiene al salir de la partida. */
+const DEMO_TABS = new Set(['Objectives', 'Midboss', 'Laning phase', 'Players', 'Minimap']);
+const LANE_POLLS = 15; // demo ready but no lane data: at most 15 polls (5 min)
+/** While the demo is pending, polls /api/matches/{id}/demo in the background every 20 s (no repaint);
+ *  when it stops being pending it updates m.demo/m.comeback and calls onReady. Stops when leaving the match. */
 function scheduleDemoRefresh(root, id, gen, m, onReady, tries = 0) {
   clearTimeout(demoTimer); demoTimer = null;
   const pending = m.demo?.state === 'pending';
-  // con el demo listo pero sin el relleno de la fase de líneas se sigue consultando un tiempo limitado
+  // demo ready but lane phase not filled in yet: keep polling for a limited time
   const needLane = m.demo?.state === 'done' && m.lane_phase?.source !== 'demo' && !m.lane_phase?.demo_incompleto && tries < LANE_POLLS;
   if (!pending && !needLane) return;
   const still = () => gen === matchGen && root.isConnected
@@ -129,7 +130,7 @@ function scheduleDemoRefresh(root, id, gen, m, onReady, tries = 0) {
     demoTimer = null;
     if (!still()) return;
     let r = null;
-    try { r = await api.get(`/api/matches/${id}/demo`); } catch { /* fallo de red: se reintenta en el siguiente ciclo */ }
+    try { r = await api.get(`/api/matches/${id}/demo`); } catch { /* network failure: retried on the next cycle */ }
     if (!still()) return;
     if (r) {
       const changed = r.demo?.state !== m.demo?.state || r.lane_phase?.source !== m.lane_phase?.source
@@ -142,9 +143,22 @@ function scheduleDemoRefresh(root, id, gen, m, onReady, tries = 0) {
     scheduleDemoRefresh(root, id, gen, m, onReady, m.demo?.state === 'done' ? tries + 1 : 0);
   }, 20000);
 }
-/** Retrato del héroe de un jugador de la partida (con los datos de /api/heroes si hay). */
+/** Hero portrait of a match player (using /api/heroes data when available). */
 const portrait = (p, opts) => heroPortrait(heroById.get(p.hero_id) || { id: p.hero_id, name: p.hero }, opts);
-const pname = p => p.name || `Cuenta ${p.account_id}`;
+/** Image next to text that already names it: hidden from assistive tech. */
+function decorative(node) { node.setAttribute('aria-hidden', 'true'); if (node.tagName === 'IMG') node.alt = ''; node.removeAttribute('aria-label'); node.removeAttribute('role'); return node; }
+/** Table column with an in-cell bar scaled to the column maximum over `scale` (compact width for wide tables). */
+function barCol(scale, c) {
+  const max = Math.max(0, ...scale.map(r => r[c.key]).filter(v => typeof v === 'number' && isFinite(v)).map(Math.abs));
+  return { ...c, render: r => {
+    const v = r[c.key], txt = formatValue(v, c.fmt);
+    if (typeof v !== 'number' || !isFinite(v) || !max) return txt;
+    return el('span', { class: 'cell-bar compact' + (v < 0 ? ' neg' : '') },
+      el('span', { class: 'cell-bar-track', 'aria-hidden': 'true' }, el('span', { class: 'cell-bar-fill', style: { width: Math.min(100, 100 * Math.abs(v) / max) + '%' } })),
+      el('span', { class: 'cell-bar-val' }, txt));
+  } };
+}
+const pname = p => p.name || `Account ${p.account_id}`;
 const mvpOf = m => m.players.find(p => p.mvp_rank === 1) || null;
 const teamSum = (m, t, k) => m.players.filter(p => p.team === t).reduce((a, p) => a + (p[k] || 0), 0);
 
@@ -153,28 +167,28 @@ function scoreboard(m, TN, verified) {
     el('div', { class: 'bstrip tilt-cards' }, m.players.filter(p => p.team === t).sort((x, y) => y.net_worth - x.net_worth).slice(0, 6)
       .map(p => el('span', { class: 'bcell', title: `${p.hero} · ${pname(p)}` }, portrait(p, { size: 'md', shape: 'card' })))),
     el('div', { class: 'blabel' },
-      el('div', { class: 'bname' }, el('span', { class: `tag t${t}` }, `Equipo ${t}`), el('b', {}, TN[t])),
-      el('div', { class: 'bmeta' }, `${fmt.int(teamSum(m, t, 'net_worth'))} oro · `, m.winning_team === t ? el('span', { class: 'sb-win' }, icon('trophy'), 'Victoria') : el('span', { class: 'sb-lose' }, 'Derrota'))));
-  return el('section', { class: 'panel scoreboard', 'aria-label': 'Marcador' },
+      el('div', { class: 'bname' }, el('span', { class: `tag t${t}` }, `Team ${t}`), el('b', {}, TN[t])),
+      el('div', { class: 'bmeta' }, `${fmt.int(teamSum(m, t, 'net_worth'))} gold · `, m.winning_team === t ? el('span', { class: 'sb-win' }, icon('trophy'), 'Victory') : el('span', { class: 'sb-lose' }, 'Defeat'))));
+  return el('section', { class: 'panel scoreboard', 'aria-label': 'Scoreboard' },
     el('div', { class: 'sb-top' },
-      el('h2', {}, `Partida #${m.match_id}`),
-      el('button', { type: 'button', class: 'danger small-btn', onclick: async () => { if (!confirm('¿Borrar la partida guardada?')) return; try { await api.post(`/api/matches/${m.match_id}/delete`); location.hash = '#partidas'; } catch (e) { toast(e.message, true); } } }, 'Borrar')),
+      el('h2', {}, `Match #${m.match_id}`),
+      el('button', { type: 'button', class: 'danger small-btn', onclick: async () => { if (!confirm('Delete the saved match?')) return; try { await api.post(`/api/matches/${m.match_id}/delete`); location.hash = '#partidas'; } catch (e) { toast(e.message, true); } } }, 'Delete')),
     el('div', { class: 'hero-banner' }, side(0),
       el('div', { class: 'bcenter' },
-        el('div', { class: 'sb-vs' }, 'KILLS · DURACIÓN'),
-        el('div', { class: 'bscore', 'aria-label': `${teamSum(m, 0, 'kills')} a ${teamSum(m, 1, 'kills')}` },
+        el('div', { class: 'sb-vs' }, 'KILLS · DURATION'),
+        el('div', { class: 'bscore', 'aria-label': `${teamSum(m, 0, 'kills')} to ${teamSum(m, 1, 'kills')}` },
           el('span', { class: 't0' }, String(teamSum(m, 0, 'kills'))), ' : ', el('span', { class: 't1' }, String(teamSum(m, 1, 'kills')))),
         el('div', { class: 'sb-dur' }, fmt.mmss(m.duration_s)), el('div', { class: 'muted small' }, fmt.datetime(m.start_time))),
       side(1)),
     verified ? el('div', { class: 'muted small', style: { padding: '8px 16px' } }, verified.replace(/^ · /, '')) : null);
 }
 
-/** Diferencia de oro (equipo 0 − equipo 1) con los momentos clave (objetivos y Midboss). */
+/** Gold difference (team 0 − team 1) with the key moments (objectives and Midboss). */
 function goldPanel(m, tname) {
-  const box = el('section', { class: 'panel gold' }, el('div', { class: 'section-head' }, el('h3', {}, 'Diferencia de oro'),
-    el('div', { class: 'legend' }, el('span', {}, el('i', { style: { background: 'var(--t0)' } }), `ventaja ${tname(0)}`), el('span', {}, el('i', { style: { background: 'var(--t1)' } }), `ventaja ${tname(1)}`))));
+  const box = el('section', { class: 'panel gold' }, el('div', { class: 'section-head' }, el('h3', {}, 'Gold difference'),
+    el('div', { class: 'legend' }, el('span', {}, el('i', { style: { background: 'var(--t0)' } }), `${tname(0)} ahead`), el('span', {}, el('i', { style: { background: 'var(--t1)' } }), `${tname(1)} ahead`))));
   const times = [...new Set(m.players.flatMap(p => (p.nw_timeline || []).map(x => x[0])))].sort((a, b) => a - b);
-  if (times.length < 2) { box.append(el('p', { class: 'muted small' }, 'La partida no trae la evolución del net worth.')); return box; }
+  if (times.length < 2) { box.append(el('p', { class: 'muted small' }, 'The match does not include the net worth timeline.')); return box; }
   const at = (p, t) => { const tl = p.nw_timeline || []; let v = 0; for (const [s, nw] of tl) { if (s <= t) v = nw; else break; } return v; };
   const pts = [[0, 0], ...times.map(t => [t, m.players.reduce((a, p) => a + (p.team === 0 ? 1 : -1) * at(p, t), 0)])];
   const W = 900, H = 200, pad = { l: 46, r: 10, t: 12, b: 34 };
@@ -185,7 +199,7 @@ function goldPanel(m, tname) {
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'goldchart'); svg.setAttribute('role', 'img');
   const final = pts[pts.length - 1][1];
-  svg.setAttribute('aria-label', `Diferencia de oro a lo largo de la partida; al final ${fmt.signed0(final)} para ${final >= 0 ? tname(0) : tname(1)}`);
+  svg.setAttribute('aria-label', `Gold difference over the match; at the end ${fmt.signed0(final)} for ${final >= 0 ? tname(0) : tname(1)}`);
   const mk = (tag, attrs, text) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; svg.append(e); return e; };
   const line = pts.map(([t, v], i) => `${i ? 'L' : 'M'}${x(t).toFixed(1)},${y(v).toFixed(1)}`).join('');
   const area = `${line}L${x(pts[pts.length - 1][0])},${y(0)}L${x(0)},${y(0)}Z`;
@@ -200,10 +214,10 @@ function goldPanel(m, tname) {
   mk('path', { d: area, class: 'area t0', 'clip-path': `url(#${uid}a)` });
   mk('path', { d: area, class: 'area t1', 'clip-path': `url(#${uid}b)` });
   mk('path', { d: line, class: 'gline' });
-  // momentos clave en el eje inferior
+  // key moments on the bottom axis
   const ev = [
-    ...m.objectives.filter(o => o.destroyed_s).map(o => ({ t: o.destroyed_s, team: o.destroyed_by, label: `${fmt.mmss(o.destroyed_s)} · ${tname(o.destroyed_by ?? (1 - o.owner_team))} destruye ${o.label}`, kind: o.type })),
-    ...m.midboss.map(b => ({ t: b.t, team: b.team_claimed, label: `${fmt.mmss(b.t)} · Midboss: lo reclama ${tname(b.team_claimed)}`, kind: 'Midboss' })),
+    ...m.objectives.filter(o => o.destroyed_s).map(o => ({ t: o.destroyed_s, team: o.destroyed_by, label: `${fmt.mmss(o.destroyed_s)} · ${tname(o.destroyed_by ?? (1 - o.owner_team))} destroys ${o.label}`, kind: o.type })),
+    ...m.midboss.map(b => ({ t: b.t, team: b.team_claimed, label: `${fmt.mmss(b.t)} · Midboss: claimed by ${tname(b.team_claimed)}`, kind: 'Midboss' })),
   ];
   for (const e of ev) {
     const g = mk('g', { class: `moment t${e.team}` + (e.kind === 'Midboss' ? ' boss' : '') });
@@ -218,11 +232,33 @@ function goldPanel(m, tname) {
   const peak0 = pts.reduce((a, p) => p[1] > a[1] ? p : a), peak1 = pts.reduce((a, p) => p[1] < a[1] ? p : a);
   box.append(el('div', { class: 'chart-scroll' }, svg),
     el('div', { class: 'gold-facts' },
-      el('span', {}, 'Final: ', el('b', {}, fmt.signed0(final)), ` para ${final >= 0 ? tname(0) : tname(1)}`),
-      el('span', {}, `Máx. ${tname(0)}: `, el('b', {}, fmt.signed0(peak0[1])), ` (${fmt.mmss(peak0[0])})`),
-      el('span', {}, `Máx. ${tname(1)}: `, el('b', {}, fmt.signed0(-peak1[1])), ` (${fmt.mmss(peak1[0])})`),
-      el('span', { class: 'muted' }, '● objetivo · ◆ Midboss/estructura grande (pasa el ratón para ver detalle)')));
+      el('span', {}, 'Final: ', el('b', {}, fmt.signed0(final)), ` for ${final >= 0 ? tname(0) : tname(1)}`),
+      el('span', {}, `Peak ${tname(0)}: `, el('b', {}, fmt.signed0(peak0[1])), ` (${fmt.mmss(peak0[0])})`),
+      el('span', {}, `Peak ${tname(1)}: `, el('b', {}, fmt.signed0(-peak1[1])), ` (${fmt.mmss(peak1[0])})`),
+      el('span', { class: 'muted' }, '● objective · ◆ Midboss/large structure (hover for details)')));
   return box;
+}
+
+/** Headline cards: MVP (only if the match provides mvp_rank), top damage, top farmer, most kills. Computed from the payload. */
+function headlineCards(m, mvp, who, tname) {
+  const best = (list, f) => list.reduce((a, p) => (f(p) > (a ? f(a) : -Infinity) ? p : a), null);
+  const card = (title, p, value, unit, sub) => el('div', { class: 'stat-card' },
+    el('div', { class: 'stat-card-visual' }, portrait(p, { size: 'md', shape: 'card' })),
+    el('div', { class: 'stat-card-body' },
+      el('div', { class: 'stat-card-title' }, title),
+      el('div', { class: 'stat-card-value' }, el('b', {}, value), unit ? el('span', { class: 'stat-card-unit' }, ' ' + unit) : null),
+      el('div', { class: 'stat-card-sub' }, el('b', {}, p.hero), ' · ', who(p)),
+      el('div', { class: 'stat-card-foot' }, el('span', { class: `tag t${p.team}` }, tname(p.team)), sub ? el('span', { class: 'muted small' }, sub) : null)));
+  const cards = [];
+  if (mvp) cards.push(card('MVP', mvp, `${mvp.kills}/${mvp.deaths}/${mvp.assists}`, 'K/D/A', `${fmt.int(mvp.net_worth)} gold · as given by the match`));
+  const dmg = best(m.players.filter(p => p.player_damage != null), p => p.player_damage);
+  if (dmg) cards.push(card('Top hero damage', dmg, fmt.int(dmg.player_damage), 'damage', null));
+  const stats = (m.player_stats || []).filter(r => r.troopers_per_min != null && r.jungla_per_min != null).map(r => ({ r, p: m.players.find(p => p.slot === r.slot) })).filter(x => x.p);
+  const farm = stats.reduce((a, x) => (x.r.troopers_per_min + x.r.jungla_per_min > (a ? a.r.troopers_per_min + a.r.jungla_per_min : -Infinity) ? x : a), null);
+  if (farm) cards.push(card('Top farmer', farm.p, fmt.dec(farm.r.troopers_per_min + farm.r.jungla_per_min, 1), 'troopers + jungle/min', `${fmt.dec(farm.r.troopers_per_min, 1)} troopers · ${fmt.dec(farm.r.jungla_per_min, 1)} jungle`));
+  const kills = best(m.players, p => p.kills);
+  if (kills) cards.push(card('Most kills', kills, String(kills.kills), 'kills', `${kills.kills}/${kills.deaths}/${kills.assists}`));
+  return el('div', { class: 'stat-cards block', role: 'group', 'aria-label': 'Match highlights' }, cards);
 }
 
 function resumen(root, m, tname, ctx) {
@@ -232,33 +268,30 @@ function resumen(root, m, tname, ctx) {
   const maxDmg = Math.max(...m.players.map(p => p.player_damage || 0), 1);
   const av = p => p.avatar ? el('img', { class: 'avatar-img', src: p.avatar, alt: '', loading: 'lazy', style: { width: '20px', height: '20px', marginRight: '6px', verticalAlign: 'middle' } }) : null;
   const who = p => p.player_id ? el('button', { type: 'button', class: 'linkbtn', onclick: () => openProfile(p.player_id, ctx) }, av(p), pname(p)) : el('span', { class: 'muted' }, av(p), pname(p));
-  if (mvp) root.append(el('div', { class: 'mvp' }, el('span', { class: 'mvp-badge' }, icon('star'), 'MVP'),
-    el('div', {}, portrait(mvp, { size: 'sm', shape: 'round' }), ' ', el('b', { class: 'mvp-hero' }, mvp.hero), ' · ', who(mvp), ' · ', el('span', { class: `tag t${mvp.team}` }, tname(mvp.team))),
-    el('div', { class: 'mvp-stats' }, `${mvp.kills}/${mvp.deaths}/${mvp.assists}`, el('span', { class: 'muted' }, ` · ${fmt.int(mvp.net_worth)} oro`),
-      el('span', { class: 'muted small' }, ' (según la partida)'))));
+  root.append(headlineCards(m, mvp, who, tname));
   const grid = el('div', { class: 'grid2' });
   for (const t of [0, 1]) {
     const ps = m.players.filter(p => p.team === t).sort((a, b) => b.net_worth - a.net_worth);
     const k = teamSum(m, t, 'kills'), nw = teamSum(m, t, 'net_worth');
     grid.append(el('div', { class: `team-card t${t}` },
-      el('h3', {}, el('span', { class: `tag t${t}` }, tname(t)), ` ${m.winning_team === t ? 'Victoria' : 'Derrota'}`, el('span', { class: 'muted small' }, ` · ${k} kills · ${fmt.int(nw)} oro`)),
+      el('h3', {}, el('span', { class: `tag t${t}` }, tname(t)), ` ${m.winning_team === t ? 'Victory' : 'Defeat'}`, el('span', { class: 'muted small' }, ` · ${k} kills · ${fmt.int(nw)} gold`)),
       el('ul', { class: 'plist' }, ps.map(p => el('li', { class: p === mvp ? 'is-mvp' : '' },
         el('div', { class: 'pl-who' }, portrait(p, { size: 'sm', shape: 'round' }), el('div', { class: 'pl-name' }, el('b', {}, p.hero), el('span', { class: 'small' }, who(p))), p === mvp ? el('span', { class: 'mvp-dot', title: 'MVP' }, icon('star')) : null),
-        el('div', { class: 'pl-kda', title: `${p.kills} kills · ${p.deaths} muertes · ${p.assists} asistencias` },
+        el('div', { class: 'pl-kda', title: `${p.kills} kills · ${p.deaths} deaths · ${p.assists} assists` },
           el('span', { class: 'kda-num' }, `${p.kills}/${p.deaths}/${p.assists}`),
           el('span', { class: 'kda-bar', 'aria-hidden': 'true', style: { width: (100 * (p.kills + p.deaths + p.assists) / maxKA) + '%' } },
             el('i', { class: 'k', style: { flex: p.kills } }), el('i', { class: 'd', style: { flex: p.deaths } }), el('i', { class: 'a', style: { flex: p.assists } }))),
-        el('div', { class: 'pl-nw' }, el('span', { class: 'lbl' }, 'Oro'), el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: { width: (100 * p.net_worth / maxNW) + '%' } })), el('span', { class: 'v' }, fmt.int(p.net_worth))),
-        p.player_damage != null ? el('div', { class: 'pl-nw dmg' }, el('span', { class: 'lbl' }, 'Daño'), el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: { width: (100 * p.player_damage / maxDmg) + '%' } })), el('span', { class: 'v' }, fmt.int(p.player_damage))) : null)))));
+        el('div', { class: 'pl-nw' }, el('span', { class: 'lbl' }, 'Gold'), el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: { width: (100 * p.net_worth / maxNW) + '%' } })), el('span', { class: 'v' }, fmt.int(p.net_worth))),
+        p.player_damage != null ? el('div', { class: 'pl-nw dmg' }, el('span', { class: 'lbl' }, 'Damage'), el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: { width: (100 * p.player_damage / maxDmg) + '%' } })), el('span', { class: 'v' }, fmt.int(p.player_damage))) : null)))));
   }
-  root.append(el('div', { class: 'legend' }, el('span', {}, el('i', { style: { background: 'var(--ok)' } }), 'kills'), el('span', {}, el('i', { style: { background: 'var(--bad)' } }), 'muertes'), el('span', {}, el('i', { style: { background: 'var(--muted)' } }), 'asistencias')), grid);
-  const det = el('details', { class: 'block' }, el('summary', {}, 'Tabla completa'));
+  root.append(el('div', { class: 'legend' }, el('span', {}, el('i', { style: { background: 'var(--ok)' } }), 'kills'), el('span', {}, el('i', { style: { background: 'var(--bad)' } }), 'deaths'), el('span', {}, el('i', { style: { background: 'var(--muted)' } }), 'assists')), grid);
+  const det = el('details', { class: 'block' }, el('summary', {}, 'Full table'));
   for (const t of [0, 1]) {
     det.append(el('h4', {}, tname(t)), dataTable([
-      { key: 'hero', label: 'Héroe', render: p => el('span', { class: 'hero-cell' }, portrait(p, { size: 'sm', shape: 'round' }), p.hero) },
-      { key: 'name', label: 'Jugador', render: p => who(p) },
+      { key: 'hero', label: 'Hero', render: p => el('span', { class: 'hero-cell' }, portrait(p, { size: 'sm', shape: 'round' }), p.hero) },
+      { key: 'name', label: 'Player', render: p => who(p) },
       { key: 'kills', label: 'K' }, { key: 'deaths', label: 'D' }, { key: 'assists', label: 'A' },
-      { key: 'net_worth', label: 'Net worth', fmt: 'int' }, { key: 'player_damage', label: 'Daño', fmt: 'int' }, { key: 'last_hits', label: 'Last hits' }, { key: 'denies', label: 'Denies' }, { key: 'level', label: 'Nivel' },
+      barCol(m.players, { key: 'net_worth', label: 'Net worth', fmt: 'int' }), barCol(m.players, { key: 'player_damage', label: 'Damage', fmt: 'int' }), { key: 'last_hits', label: 'Last hits' }, { key: 'denies', label: 'Denies' }, { key: 'level', label: 'Level' },
       { key: 'comeback_gold_koth', label: 'Comeback Gold Koth' },
     ], m.players.filter(p => p.team === t), { sortKey: 'net_worth' }));
   }
@@ -266,43 +299,43 @@ function resumen(root, m, tname, ctx) {
 }
 
 function objetivos(root, m, tname) {
-  root.append(el('p', { class: 'muted small' }, '«Equipo» es el DUEÑO del objetivo; lo destruye el rival. Si no cayó, se muestra el primer golpe. El mapeo de IDs es inferido (editable en Ajustes).'));
+  root.append(el('p', { class: 'muted small' }, '“Team” is the OWNER of the objective; the opponent destroys it. If it did not fall, the first hit is shown. The ID mapping is inferred (editable in Settings).'));
   const cols = [
-    { key: 'label', label: 'Objetivo' }, { key: 'objective_id', label: 'ID' },
-    { key: 'lane', label: 'Carril', render: r => r.lane ? laneChip(r.lane, m.lanes) : '' },
-    { key: 'destroyed_s', label: 'Cae', fmt: 'mmss' },
-    { key: 'first_damage_s', label: 'Primer golpe', render: r => r.destroyed_s ? fmt.mmss(r.first_damage_s) : (r.first_damage_s ? `${fmt.mmss(r.first_damage_s)} (no cayó)` : 'sin daño') },
-    { key: 'player_damage', label: 'Daño de jugadores', fmt: 'int' }, { key: 'creep_damage', label: 'Daño de tropas', fmt: 'int' },
+    { key: 'label', label: 'Objective', render: r => el('span', { class: 'obj-cell' }, decorative(objectiveImg(r.type, r.owner_team, { size: 'sm' })), r.label) }, { key: 'objective_id', label: 'ID' },
+    { key: 'lane', label: 'Lane', render: r => r.lane ? laneChip(r.lane, m.lanes) : '' },
+    { key: 'destroyed_s', label: 'Falls', fmt: 'mmss' },
+    { key: 'first_damage_s', label: 'First hit', render: r => r.destroyed_s ? fmt.mmss(r.first_damage_s) : (r.first_damage_s ? `${fmt.mmss(r.first_damage_s)} (did not fall)` : 'no damage') },
+    { key: 'player_damage', label: 'Player damage', fmt: 'int' }, { key: 'creep_damage', label: 'Trooper damage', fmt: 'int' },
   ];
   root.append(laneTracks(m, tname), kothCard(m, tname));
   const grid = el('div', { class: 'grid2' });
   for (const t of [0, 1]) {
     const rows = m.objectives.filter(o => o.owner_team === t);
-    grid.append(el('div', {}, el('h3', {}, 'Objetivos de ', el('span', { class: `tag t${t}` }, tname(t))), dataTable(cols, rows, { sortKey: 'destroyed_s', asc: true })));
+    grid.append(el('div', {}, el('h3', {}, 'Objectives of ', el('span', { class: `tag t${t}` }, tname(t))), dataTable(cols, rows, { sortKey: 'destroyed_s', asc: true })));
   }
-  root.append(el('div', { class: 'row' }, el('button', { onclick: () => csvDownload(`objetivos_${m.match_id}.csv`, [
-    { label: 'equipo_dueño', csv: r => r.owner_team }, { label: 'objetivo', csv: r => r.label }, { label: 'id', csv: r => r.objective_id },
-    { label: 'cae_s', csv: r => r.destroyed_s ?? '' }, { label: 'cae_mmss', csv: r => r.destroyed_s ? fmt.mmss(r.destroyed_s) : '' },
-    { label: 'primer_golpe_s', csv: r => r.first_damage_s ?? '' }], m.objectives) }, 'Exportar CSV')), grid);
-  const ev = side => m.objectives.filter(o => o.owner_team === side && o.destroyed_s).map(o => ({ t: o.destroyed_s, label: `${o.label} de ${tname(side)}`, side: side === 0 ? 't0' : 't1', kind: o.type }));
-  const mb = m.midboss.map(x => ({ t: x.t, label: `Midboss: lo mata ${tname(x.team_killed)}, lo reclama ${tname(x.team_claimed)}`, side: x.team_killed === 0 ? 't0' : 't1', kind: 'Midboss' }));
-  root.append(el('h3', { style: { marginTop: '14px' } }, 'Línea de tiempo'),
-    el('p', { class: 'muted small' }, 'Color = equipo DUEÑO del objetivo que cae (ámbar relleno = equipo 0, azul en contorno = equipo 1).'),
+  root.append(el('div', { class: 'row' }, el('button', { onclick: () => csvDownload(`objectives_${m.match_id}.csv`, [
+    { label: 'owner_team', csv: r => r.owner_team }, { label: 'objective', csv: r => r.label }, { label: 'id', csv: r => r.objective_id },
+    { label: 'falls_s', csv: r => r.destroyed_s ?? '' }, { label: 'falls_mmss', csv: r => r.destroyed_s ? fmt.mmss(r.destroyed_s) : '' },
+    { label: 'first_hit_s', csv: r => r.first_damage_s ?? '' }], m.objectives) }, 'Export CSV')), grid);
+  const ev = side => m.objectives.filter(o => o.owner_team === side && o.destroyed_s).map(o => ({ t: o.destroyed_s, label: `${o.label} of ${tname(side)}`, side: side === 0 ? 't0' : 't1', kind: o.type }));
+  const mb = m.midboss.map(x => ({ t: x.t, label: `Midboss: killed by ${tname(x.team_killed)}, claimed by ${tname(x.team_claimed)}`, side: x.team_killed === 0 ? 't0' : 't1', kind: 'Midboss' }));
+  root.append(el('h3', { style: { marginTop: '14px' } }, 'Timeline'),
+    el('p', { class: 'muted small' }, 'Colour = OWNER team of the objective that falls (filled amber = team 0, outlined blue = team 1).'),
     timeline({ rows: [
-      { label: `Pierde ${tname(0)}`, duration: m.duration_s, events: ev(0) },
-      { label: `Pierde ${tname(1)}`, duration: m.duration_s, events: ev(1) },
+      { label: `${tname(0)} loses`, duration: m.duration_s, events: ev(0) },
+      { label: `${tname(1)} loses`, duration: m.duration_s, events: ev(1) },
       { label: 'Midboss', duration: m.duration_s, events: mb },
     ] }));
 }
 
-/** Una pista por carril (+ «Base») con cada objetivo destruido en su minuto, borde = equipo dueño. */
+/** One track per lane (+ “Base”) with each destroyed objective at its minute; border = owner team. */
 function laneTracks(m, tname) {
   const fallen = m.objectives.filter(o => o.destroyed_s);
   const dur = Math.max(m.duration_s || 0, ...fallen.map(o => o.destroyed_s), 1);
   const laneIds = [...new Set([1, 3, 4, ...fallen.map(o => o.lane).filter(l => l != null)])];
-  const GAP = 6, ROW_PX = 28; // % mínimo entre marcas de una misma fila; alto de cada fila de marcas
+  const GAP = 6, ROW_PX = 28; // min % between marks in one row; height of each mark row
   const row = (name, alias, color, list) => {
-    const lastX = []; // última posición (%) por fila: las marcas cercanas bajan a otra fila
+    const lastX = []; // last position (%) per row: nearby marks drop to another row
     const marks = list.slice().sort((a, b) => a.destroyed_s - b.destroyed_s).map(o => {
       const x = 100 * o.destroyed_s / dur;
       let r = lastX.findIndex(lx => x - lx >= GAP);
@@ -313,34 +346,34 @@ function laneTracks(m, tname) {
     const rows = Math.max(1, lastX.length);
     return el('div', { class: 'lane-row', style: { '--lane': color } },
       el('div', { class: 'ln' }, name, alias ? el('small', {}, alias) : null),
-      el('div', { class: 'lane-track', role: 'list', 'aria-label': `Objetivos destruidos en ${name}`, style: { height: (6 + rows * ROW_PX) + 'px' } },
+      el('div', { class: 'lane-track', role: 'list', 'aria-label': `Objectives destroyed in ${name}`, style: { height: (6 + rows * ROW_PX) + 'px' } },
         marks.map(({ o, x, r }) => el('span', { class: `ev t${o.owner_team}`, role: 'listitem', style: { left: x.toFixed(2) + '%', top: (3 + ROW_PX * (r + 0.5)) + 'px' },
-          title: `${o.type} de ${m.team_names[o.owner_team]} · ${fmt.mmss(o.destroyed_s)}` }, objectiveImg(o.type, o.owner_team, { size: 'sm' })))));
+          title: `${o.type} of ${m.team_names[o.owner_team]} · ${fmt.mmss(o.destroyed_s)}` }, objectiveImg(o.type, o.owner_team, { size: 'sm' })))));
   };
   const axis = el('div', { class: 'lane-row lane-axis', 'aria-hidden': 'true' }, el('div'),
     el('div', { class: 'lane-track' }, Array.from({ length: Math.floor(dur / 600) + 1 }, (_, i) => el('span', { class: 'tick', style: { left: (100 * i * 600 / dur) + '%' } }, `${i * 10}'`))));
   return el('div', { class: 'lane-tracks' },
-    el('h3', {}, 'Objetivos por carril'),
-    el('p', { class: 'muted small' }, 'Cada marca es un objetivo destruido en su minuto; el borde es el color del equipo DUEÑO (', el('span', { class: 'tag t0' }, tname(0)), el('span', { class: 'tag t1' }, tname(1)), ').'),
+    el('h3', {}, 'Objectives by lane'),
+    el('p', { class: 'muted small' }, 'Each mark is an objective destroyed at its minute; the border is the colour of the OWNER team (', el('span', { class: 'tag t0' }, tname(0)), el('span', { class: 'tag t1' }, tname(1)), ').'),
     laneIds.map(id => { const l = laneStyle(id, m.lanes); return row(l.nombre, l.alias, l.color, fallen.filter(o => o.lane === id)); }),
-    row('Base', 'Shrines, Titan y Core', 'var(--muted)', fallen.filter(o => o.lane == null)),
+    row('Base', 'Shrines, Titan and Core', 'var(--muted)', fallen.filter(o => o.lane == null)),
     axis);
 }
 
-/** Estado del demo cuando no hay datos: cargando / sin demo / no disponible (con su razón). */
+/** Demo state when there is no data: loading / no demo / not available (with its reason). */
 function demoStatus(demo) {
   const st = demo?.state;
-  if (st === 'pending') return el('div', { class: 'unavailable block', role: 'status' }, spinner('Cargando datos del demo…'));
-  if (st === 'nodemo') return el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), 'esta partida no tiene demo.');
-  return el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), demo?.reason || 'no hay datos del demo para esta partida.');
+  if (st === 'pending') return el('div', { class: 'unavailable block', role: 'status' }, spinner('Loading demo data…'));
+  if (st === 'nodemo') return el('div', { class: 'unavailable block' }, el('b', {}, 'Not available: '), 'this match has no demo.');
+  return el('div', { class: 'unavailable block' }, el('b', {}, 'Not available: '), demo?.reason || 'there is no demo data for this match.');
 }
 
 const demoDone = m => m.demo?.state === 'done';
 const teamTag = (t, tname) => t == null ? el('span', { class: 'muted' }, '–') : el('span', { class: `tag t${t}` }, tname(t));
-/** Remontada en el momento: 0/1 = ese equipo; -1 = ninguno (no se marca); null = sin muestras de net worth. */
+/** Comeback at that moment: 0/1 = that team; -1 = none (not marked); null = no net worth samples. */
 const comebackTag = (team, tname) => team === -1 ? null
-  : team == null ? el('span', { class: 'tag comeback muted', title: 'Sin muestras de net worth para aplicar la regla del 10 %' }, 'remontada: —')
-  : el('span', { class: `tag comeback t${team}`, title: 'Regla del 10 %: net worth (interpolado) < 0,9 × el del rival' }, `en remontada: ${tname(team)}`);
+  : team == null ? el('span', { class: 'tag comeback muted', title: 'No net worth samples to apply the 10% rule' }, 'comeback: —')
+  : el('span', { class: `tag comeback t${team}`, title: '10% rule: net worth (interpolated) < 0.9 × the opponent’s' }, `comeback: ${tname(team)}`);
 
 function kothCard(m, tname) {
   const d = demoDone(m) ? m.demo : null;
@@ -348,36 +381,36 @@ function kothCard(m, tname) {
   const rows = d ? (d.koth || []) : [];
   return el('div', { class: 'koth-card' },
     el('div', { class: 'koth-head' }, objectiveImg('KOTH', null, { size: 'lg' }), el('h3', {}, 'KOTH (Unstable Rift)')),
-    d ? (rows.length ? el('ul', { class: 'koth-list cashins' }, rows.map((k, i) => el('li', {},
+    d ? (rows.length ? el('ul', { class: 'koth-list cashins' }, rows.map((k, i) => el('li', {}, decorative(objectiveImg('KOTH', null, { size: 'sm' })),
       el('b', { class: 'ci-n' }, `#${k.n}`),
-      el('span', {}, `inicio ${fmt.mmss(k.start_t)}`),
-      k.completed_by == null ? el('span', { class: 'muted' }, 'no completado')
-        : el('span', {}, 'completado ', fmt.mmss(k.completed_t), ' por ', teamTag(k.completed_by, tname)),
-      comebackTag(cb[i], tname)))) : el('p', { class: 'muted small' }, 'No hubo cash-in del KOTH.')) : demoStatus(m.demo),
+      el('span', {}, `start ${fmt.mmss(k.start_t)}`),
+      k.completed_by == null ? el('span', { class: 'muted' }, 'not completed')
+        : el('span', {}, 'completed ', fmt.mmss(k.completed_t), ' by ', teamTag(k.completed_by, tname)),
+      comebackTag(cb[i], tname)))) : el('p', { class: 'muted small' }, 'There was no KOTH cash-in.')) : demoStatus(m.demo),
     el('div', { class: 'grid2' }, [0, 1].map(t => el('div', {},
       el('h4', {}, 'Comeback Gold Koth · ', el('span', { class: `tag t${t}` }, tname(t))),
       el('ul', { class: 'koth-list' }, m.players.filter(p => p.team === t).map(p =>
         el('li', {}, portrait(p, { size: 'sm', shape: 'round' }), el('span', {}, p.hero), el('b', {}, fmt.int(p.comeback_gold_koth || 0)))))))));
 }
 
-/** 3 iconos de Rejuvenator, cada uno del color del equipo que lo coge (según rejuv del demo). */
+/** Rejuvenator icons, each in the colour of the team that takes it (from the demo's rejuv). */
 function rejuvIcons(rejuv, tname) {
   const r0 = (rejuv && rejuv[0]) || 0, r1 = (rejuv && rejuv[1]) || 0;
   const owners = [...Array(r0).fill(0), ...Array(r1).fill(1)];
-  const txt = owners.length ? [r0 ? `${r0} rejuvenators para ${tname(0)}` : null, r1 ? `${r1} rejuvenators para ${tname(1)}` : null].filter(Boolean).join(', ') : 'sin rejuvenators';
+  const txt = owners.length ? [r0 ? `${r0} rejuvenators for ${tname(0)}` : null, r1 ? `${r1} rejuvenators for ${tname(1)}` : null].filter(Boolean).join(', ') : 'no rejuvenators';
   return el('span', { class: 'rejuvs', role: 'img', 'aria-label': txt, title: txt },
     owners.map(t => el('span', { class: `rj t${t}`, 'aria-hidden': 'true' }, objectiveImg('Rejuvenator', null, { size: 'sm' }))),
     el('span', { class: 'rj-txt' }, txt));
 }
 
 function dmgBar(damage, tname) {
-  // sin daño capturado (Midboss visto solo por los rejuvenators): dato ausente, no 0
-  if (damage == null) return el('div', { class: 'dmg-duo' }, el('div', { class: 'small muted' }, 'Daño: no disponible'));
+  // no damage captured (Midboss seen only through the rejuvenators): missing data, not 0
+  if (damage == null) return el('div', { class: 'dmg-duo' }, el('div', { class: 'small muted' }, 'Damage: not available'));
   const d0 = (damage && damage[0]) || 0, d1 = (damage && damage[1]) || 0, tot = d0 + d1;
   return el('div', { class: 'dmg-duo' },
     el('div', { class: 'dmg-bar', 'aria-hidden': 'true' },
       el('i', { class: 't0', style: { flex: tot ? d0 : 1 } }), el('i', { class: 't1', style: { flex: tot ? d1 : 1 } })),
-    el('div', { class: 'small' }, `Daño: ${tname(0)} ${fmt.int(d0)} · ${tname(1)} ${fmt.int(d1)}`));
+    el('div', { class: 'small' }, `Damage: ${tname(0)} ${fmt.int(d0)} · ${tname(1)} ${fmt.int(d1)}`));
 }
 
 function midboss(root, m, tname) {
@@ -385,41 +418,41 @@ function midboss(root, m, tname) {
   if (!demoDone(m)) {
     root.append(demoStatus(m.demo),
       m.midboss.length ? dataTable([
-        { key: 'n', label: '#' }, { key: 't', label: 'Minuto', fmt: 'mmss' },
-        { key: 'team_killed', label: 'Lo mata', render: r => el('span', { class: `tag t${r.team_killed}` }, tname(r.team_killed)) },
-        { key: 'team_claimed', label: 'Lo reclama', render: r => el('span', { class: `tag t${r.team_claimed}` }, tname(r.team_claimed)) },
-      ], m.midboss, { sortKey: 't', asc: true }) : el('p', { class: 'muted' }, 'No hubo Midboss.'));
+        { key: 'n', label: '#', render: r => el('span', { class: 'obj-cell' }, decorative(objectiveImg('Midboss', null, { size: 'sm' })), String(r.n)) }, { key: 't', label: 'Minute', fmt: 'mmss' },
+        { key: 'team_killed', label: 'Killed by', render: r => el('span', { class: `tag t${r.team_killed}` }, tname(r.team_killed)) },
+        { key: 'team_claimed', label: 'Claimed by', render: r => el('span', { class: `tag t${r.team_claimed}` }, tname(r.team_claimed)) },
+      ], m.midboss, { sortKey: 't', asc: true }) : el('p', { class: 'muted' }, 'There was no Midboss.'));
     return;
   }
   const evs = m.demo.midboss || [], cb = (m.comeback && m.comeback.midboss) || [];
-  if (!evs.length) { root.append(el('p', { class: 'muted' }, 'No hubo Midboss.')); return; }
+  if (!evs.length) { root.append(el('p', { class: 'muted' }, 'There was no Midboss.')); return; }
   root.append(el('div', { class: 'mb-list' }, evs.map((e, i) => el('div', { class: 'mb-card' },
-    el('div', { class: 'mb-head' }, el('b', {}, `Midboss #${e.n}`), el('span', {}, fmt.mmss(e.t)),
-      el('span', {}, 'lo mata ', teamTag(e.killer, tname)), comebackTag(cb[i], tname)),
+    el('div', { class: 'mb-head' }, decorative(objectiveImg('Midboss', null, { size: 'sm' })), el('b', {}, `Midboss #${e.n}`), el('span', {}, fmt.mmss(e.t)),
+      el('span', {}, 'killed by ', teamTag(e.killer, tname)), comebackTag(cb[i], tname)),
     rejuvIcons(e.rejuv, tname),
     dmgBar(e.damage, tname),
-    e.initiator != null ? el('div', { class: 'small' }, 'Iniciado por ', teamTag(e.initiator, tname)) : null,
-    e.stolen != null ? el('div', { class: 'small' }, 'Robado: ', e.stolen ? 'sí' : 'no') : null))));
+    e.initiator != null ? el('div', { class: 'small' }, 'Started by ', teamTag(e.initiator, tname)) : null,
+    e.stolen != null ? el('div', { class: 'small' }, 'Stolen: ', e.stolen ? 'yes' : 'no') : null))));
 }
 
-const LANE_UNAVAILABLE = 'No disponible: las posiciones no permiten saber la línea de cada jugador.';
-const srcLabel = lp => lp?.source === 'demo' ? 'demo' : lp?.source === 'aprox' ? 'aprox., sin demo' : 'sin datos';
-const srcNote = lp => el('p', { class: 'muted small' }, 'Fuente: ', el('b', {}, srcLabel(lp)),
-  lp?.source === 'aprox' && lp?.demo_incompleto ? ' · el demo de esta partida está incompleto (las pausas dejan fuera parte de los 10 primeros minutos), así que no se usa.' : '',
-  lp?.source === 'aprox' ? ' · el reparto del daño (línea/gankeo) y los gankeos necesitan el demo («–»); el resto se aproxima con las estadísticas de la partida.' : '');
+const LANE_UNAVAILABLE = 'Not available: the positions do not reveal each player’s lane.';
+const srcLabel = lp => lp?.source === 'demo' ? 'demo' : lp?.source === 'aprox' ? 'approx., no demo' : 'no data';
+const srcNote = lp => el('p', { class: 'muted small' }, 'Source: ', el('b', {}, srcLabel(lp)),
+  lp?.source === 'aprox' && lp?.demo_incompleto ? ' · this match’s demo is incomplete (pauses leave out part of the first 10 minutes), so it is not used.' : '',
+  lp?.source === 'aprox' ? ' · the damage split (lane/gank) and the ganks need the demo (“–”); the rest is approximated from the match stats.' : '');
 const minOf = t => t == null ? null : fmt.mmss(t);
 
-/** Dos barras (hecho / recibido) con escala común. */
+/** Two bars (dealt / taken) on a common scale. */
 function dmgPair(done, taken, max) {
   const bar = (v, cls, lbl) => el('div', { class: 'lp-bar' }, el('span', { class: 'lbl' }, lbl),
     el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { class: cls, style: { width: (v == null ? 0 : 100 * v / max) + '%' } })),
     el('span', { class: 'v' }, v == null ? '–' : fmt.int(v)));
-  return el('div', { class: 'lp-bars' }, bar(done, 'done', 'Hecho'), bar(taken, 'taken', 'Recibido'));
+  return el('div', { class: 'lp-bars' }, bar(done, 'done', 'Dealt'), bar(taken, 'taken', 'Taken'));
 }
 
 function faseLineas(root, m, tname) {
   const lp = m.lane_phase;
-  if (!lp) { root.append(el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), 'no se pudo calcular la fase de líneas de esta partida.')); return; }
+  if (!lp) { root.append(el('div', { class: 'unavailable block' }, el('b', {}, 'Not available: '), 'the laning phase of this match could not be computed.')); return; }
   root.append(srcNote(lp));
   if (!lp.valid) { root.append(el('div', { class: 'unavailable block' }, LANE_UNAVAILABLE)); return; }
   const byslot = new Map(m.players.map(p => [p.slot, p]));
@@ -427,56 +460,57 @@ function faseLineas(root, m, tname) {
   const laneIds = Object.keys(lp.lanes).map(Number).sort((a, b) => a - b);
   const all = laneIds.flatMap(l => Object.values(lp.lanes[String(l)]));
   const max = Math.max(1, ...all.flatMap(c => [c.dmg_done || 0, c.dmg_taken || 0]));
+  const heroBit = s => { const p = byslot.get(s); return p ? el('span', { class: 'hero-cell' }, portrait(p, { size: 'sm', shape: 'round' }), el('b', {}, p.hero)) : el('b', {}, hname(s)); };
   const gank = g => {
-    if (lp.source !== 'demo') return el('span', { class: 'muted' }, '–');  // los gankeos necesitan el demo
-    if (!g) return el('span', { class: 'muted' }, 'ninguno');
-    return el('span', {}, `${minOf(g.t)} · `, el('b', {}, hname(g.attacker_slot)), ' gankea a ', el('b', {}, hname(g.victim_slot)), g.kind === 'kill' ? ' (kill)' : ' (daño)');
+    if (lp.source !== 'demo') return el('span', { class: 'muted' }, '–');  // ganks need the demo
+    if (!g) return el('span', { class: 'muted' }, 'none');
+    return el('span', { class: 'gank-line' }, `${minOf(g.t)} · `, heroBit(g.attacker_slot), ' ganks ', heroBit(g.victim_slot), g.kind === 'kill' ? ' (kill)' : ' (damage)');
   };
   const num = v => v == null ? el('span', { class: 'muted' }, '–') : el('b', {}, fmt.int(v));
-  const guard = t => t == null ? el('span', { class: 'muted' }, 'no cayó') : el('b', {}, minOf(t));
+  const guard = t => t == null ? el('span', { class: 'muted' }, 'did not fall') : el('b', {}, minOf(t));
   const card = (lane, t) => {
     const c = lp.lanes[String(lane)][String(t)];
-    if (!c) return el('div', { class: `team-card t${t}` }, el('h4', {}, el('span', { class: `tag t${t}` }, tname(t))), el('p', { class: 'muted small' }, 'Sin datos.'));
+    if (!c) return el('div', { class: `team-card t${t}` }, el('h4', {}, el('span', { class: `tag t${t}` }, tname(t))), el('p', { class: 'muted small' }, 'No data.'));
     return el('div', { class: `team-card t${t} lp-card` },
       el('h4', {}, el('span', { class: `tag t${t}` }, tname(t))),
       el('div', { class: 'lp-duo' }, (c.slots || []).map(sl => { const p = byslot.get(sl); return p ? el('span', { class: 'lp-hero' }, portrait(p, { size: 'sm', shape: 'round' }), el('span', {}, p.hero)) : null; })),
       dmgPair(c.dmg_done, c.dmg_taken, max),
       el('dl', { class: 'lp-facts' },
-        el('dt', {}, 'Daño hecho en la línea'), el('dd', {}, num(c.dmg_done_lane)),
-        el('dt', {}, 'Daño recibido en la línea'), el('dd', {}, num(c.dmg_taken_lane)),
-        el('dt', {}, 'Daño recibido por gankeo'), el('dd', {}, num(c.dmg_taken_gank)),
-        el('dt', {}, 'Guardian rival tirado'), el('dd', {}, guard(c.guardian_taken_t)),
-        el('dt', {}, 'Guardian propio perdido'), el('dd', {}, guard(c.guardian_lost_t)),
-        el('dt', {}, 'Kills / muertes'), el('dd', {}, el('b', {}, `${c.kills ?? '–'} / ${c.deaths ?? '–'}`)),
-        el('dt', { style: { gridColumn: '1 / -1' } }, 'Primer gankeo hecho'), el('dd', { class: 'wide' }, gank(c.first_gank_made)),
-        el('dt', { style: { gridColumn: '1 / -1' } }, 'Primer gankeo sufrido'), el('dd', { class: 'wide' }, gank(c.first_gank_suffered))));
+        el('dt', {}, 'Damage dealt in lane'), el('dd', {}, num(c.dmg_done_lane)),
+        el('dt', {}, 'Damage taken in lane'), el('dd', {}, num(c.dmg_taken_lane)),
+        el('dt', {}, 'Damage taken from ganks'), el('dd', {}, num(c.dmg_taken_gank)),
+        el('dt', {}, 'Enemy Guardian taken down'), el('dd', {}, guard(c.guardian_taken_t)),
+        el('dt', {}, 'Own Guardian lost'), el('dd', {}, guard(c.guardian_lost_t)),
+        el('dt', {}, 'Kills / deaths'), el('dd', {}, el('b', {}, `${c.kills ?? '–'} / ${c.deaths ?? '–'}`)),
+        el('dt', { style: { gridColumn: '1 / -1' } }, 'First gank made'), el('dd', { class: 'wide' }, gank(c.first_gank_made)),
+        el('dt', { style: { gridColumn: '1 / -1' } }, 'First gank suffered'), el('dd', { class: 'wide' }, gank(c.first_gank_suffered))));
   };
   for (const l of laneIds) root.append(el('section', { class: 'lp-lane' }, el('h3', {}, laneChip(l, m.lanes)), el('div', { class: 'grid2' }, card(l, 0), card(l, 1))));
-  root.append(el('p', { class: 'muted small' }, 'Las líneas se asignan por la posición de cada jugador, no por el lado del mapa. «–» = sin dato.'));
+  root.append(el('p', { class: 'muted small' }, 'Lanes are assigned by each player’s position, not by map side. “–” = no data.'));
 }
 
 function jugadores(root, m, tname) {
   const ps = m.player_stats, lp = m.lane_phase;
-  if (!ps || !ps.length) { root.append(el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), 'no se pudo calcular el desglose por jugador de esta partida.')); return; }
+  if (!ps || !ps.length) { root.append(el('div', { class: 'unavailable block' }, el('b', {}, 'Not available: '), 'the per-player breakdown of this match could not be computed.')); return; }
   const byslot = new Map(m.players.map(p => [p.slot, p]));
   const rows = ps.map(r => ({ ...r, pl: byslot.get(r.slot), hero: byslot.get(r.slot)?.hero || `#${r.slot}`, pname: byslot.get(r.slot) ? pname(byslot.get(r.slot)) : '' }));
   const detail = el('div', { class: 'pj-detail' });
   let sel = null;
-  root.append(srcNote(lp), el('p', { class: 'muted small' }, 'Elige un jugador (clic en su fila o en el selector) para ver dónde mató y dónde murió, y sus almas por fuente.'));
+  root.append(srcNote(lp), el('p', { class: 'muted small' }, 'Pick a player (click their row or use the selector) to see where they killed and died, and their souls by source.'));
   const laneCell = r => r.lane == null ? el('span', { class: 'muted' }, '–') : laneChip(r.lane, m.lanes);
   const cols = [
-    { key: 'hero', label: 'Héroe', render: r => el('span', { class: 'hero-cell' }, r.pl ? portrait(r.pl, { size: 'sm', shape: 'round' }) : null, r.hero) },
-    { key: 'pname', label: 'Jugador' },
-    { key: 'team', label: 'Equipo', render: r => teamTag(r.team, tname) },
-    { key: 'lane', label: 'Línea', render: laneCell, sort: r => r.lane ?? 99 },
+    { key: 'hero', label: 'Hero', render: r => el('span', { class: 'hero-cell' }, r.pl ? portrait(r.pl, { size: 'sm', shape: 'round' }) : null, r.hero) },
+    { key: 'pname', label: 'Player' },
+    { key: 'team', label: 'Team', render: r => teamTag(r.team, tname) },
+    { key: 'lane', label: 'Lane', render: laneCell, sort: r => r.lane ?? 99 },
     { key: 'kda', label: 'KDA', render: r => [r.kills, r.deaths, r.assists].map(v => v ?? '–').join('/') + (r.kda != null ? ` (${fmt.dec(r.kda, 1)})` : ''), sort: r => r.kda ?? -1 },
-    { key: 'troopers_per_min', label: 'Troopers/min', fmt: '1' }, { key: 'jungla_per_min', label: 'Jungla/min', fmt: '1' },
-    { key: 'nw_per_min', label: 'NW/min', fmt: 'int' }, { key: 'nw_at_600', label: "NW a los 10'", fmt: 'int' },
-    { key: 'player_damage', label: 'Daño', fmt: 'int' },
-    { key: 'lane_dmg_done', label: 'Daño en líneas', fmt: 'int' }, { key: 'lane_dmg_taken', label: 'Recibido en líneas', fmt: 'int' },
-    { key: 'ganks_made', label: 'Gankeos', fmt: 'int' }, { key: 'ganks_suffered', label: 'Gankeos sufridos', fmt: 'int' },
+    barCol(rows, { key: 'troopers_per_min', label: 'Troopers/min', fmt: '1' }), barCol(rows, { key: 'jungla_per_min', label: 'Jungle/min', fmt: '1' }),
+    barCol(rows, { key: 'nw_per_min', label: 'NW/min', fmt: 'int' }), barCol(rows, { key: 'nw_at_600', label: "NW at 10'", fmt: 'int' }),
+    barCol(rows, { key: 'player_damage', label: 'Damage', fmt: 'int' }),
+    barCol(rows, { key: 'lane_dmg_done', label: 'Lane damage dealt', fmt: 'int' }), barCol(rows, { key: 'lane_dmg_taken', label: 'Lane damage taken', fmt: 'int' }),
+    { key: 'ganks_made', label: 'Ganks made', fmt: 'int' }, { key: 'ganks_suffered', label: 'Ganks suffered', fmt: 'int' },
   ];
-  const picker = el('select', { 'aria-label': 'Jugador' }, el('option', { value: '' }, 'Elige un jugador…'),
+  const picker = el('select', { 'aria-label': 'Player' }, el('option', { value: '' }, 'Pick a player…'),
     rows.map(r => el('option', { value: String(r.slot) }, `${r.hero} · ${r.pname || '—'} (${tname(r.team)})`)));
   picker.addEventListener('change', () => { sel = picker.value === '' ? null : rows.find(r => String(r.slot) === picker.value); showPlayer(); });
   root.append(el('div', { class: 'row' }, picker), dataTable(cols, rows, { sortKey: 'team', asc: true, onRowClick: r => { sel = r; picker.value = String(r.slot); showPlayer(); } }), detail);
@@ -486,11 +520,11 @@ function jugadores(root, m, tname) {
     if (cells == null) return el('div', { class: 'pj-map' }, el('h4', {}, title), el('p', { class: 'muted small' }, absent));
     const box = el('div');
     const map = new MapView(box, { size: 380, grid: G, label: title });
-    // equipo 1: las celdas vienen giradas (base propia abajo); se deshace el giro y se gira el mapa entero
+    // team 1: the cells come rotated (own base at the bottom); the rotation is undone and the whole map is rotated
     const cs = team === 1 ? cells.map(([c, r, n]) => [G - 1 - c, G - 1 - r, n]) : cells;
     map.ready.then(() => map.setLayers(cs.length ? [{ kind: 'cells', cells: cs, color, labels: true }] : [], { rotate: team === 1, grid: G }));
     return el('div', { class: 'pj-map' }, el('h4', {}, `${title} (${cells.reduce((a, c) => a + c[2], 0)})`), box,
-      cells.length ? null : el('p', { class: 'muted small' }, 'Ninguna con posición.'));
+      cells.length ? null : el('p', { class: 'muted small' }, 'None with a position.'));
   }
   function showPlayer() {
     detail.innerHTML = '';
@@ -499,46 +533,48 @@ function jugadores(root, m, tname) {
     const names = m.economy?.source_names || {};
     const src = sel.sources;
     detail.append(el('h3', {}, sel.pl ? portrait(sel.pl, { size: 'sm', shape: 'round' }) : null, ` ${sel.hero} · ${sel.pname || '—'} `, laneCell(sel)),
-      el('p', { class: 'muted small' }, 'Mapas con la base propia abajo. Kills = lugar donde murió el rival; muertes = lugar de la muerte propia.'),
-      el('div', { class: 'grid2' }, cellMap('Kills', sel.kill_cells || [], sel.team, color), cellMap('Muertes', sel.death_cells || [], sel.team, color)),
-      el('h4', {}, 'Without midboss and KOTH fights'),
+      el('p', { class: 'muted small' }, 'Maps with the player’s own base at the bottom. Kills = where the opponent died; deaths = where the player died.'),
+      el('div', { class: 'grid2' }, cellMap('Kills', sel.kill_cells || [], sel.team, color), cellMap('Deaths', sel.death_cells || [], sel.team, color)),
+      el('h4', {}, 'Without Midboss and KOTH fights'),
       el('p', { class: 'muted small' }, sel.fights
         ? `Counts by fight type (kills / deaths): midboss ${sel.fights.kills.midboss} / ${sel.fights.deaths.midboss}, KOTH ${sel.fights.kills.koth} / ${sel.fights.deaths.koth}, rest ${sel.fights.kills.rest} / ${sel.fights.deaths.rest}, no position ${sel.fights.kills.unknown} / ${sel.fights.deaths.unknown}. Events without a position are left off the maps.`
         : 'Not available: the KOTH cannot be identified without the match demo.'),
       el('div', { class: 'grid2' },
         cellMap('Kills without objective fights', sel.kill_cells_rest, sel.team, color, 'Not available without the demo (KOTH not identifiable).'),
         cellMap('Deaths without objective fights', sel.death_cells_rest, sel.team, color, 'Not available without the demo (KOTH not identifiable).')),
-      el('h4', {}, 'Almas por fuente'),
-      src && Object.keys(src).length ? dataTable([{ key: 'src', label: 'Fuente' }, { key: 'v', label: 'Almas', fmt: 'int' }],
-        Object.entries(src).map(([k, v]) => ({ src: names[k] || `Fuente ${k}`, v })), { sortKey: 'v' })
-        : el('p', { class: 'muted small' }, 'No disponible: la partida no trae almas por fuente de este jugador.'));
+      el('h4', {}, 'Souls by source'),
+      src && Object.keys(src).length ? dataTable([{ key: 'src', label: 'Source' }, { key: 'v', label: 'Souls', fmt: 'int' }],
+        Object.entries(src).map(([k, v]) => ({ src: names[k] || `Source ${k}`, v })), { sortKey: 'v' })
+        : el('p', { class: 'muted small' }, 'Not available: the match has no souls-by-source data for this player.'));
   }
 }
 
-const ECO_COLS = [['troopers_kills', 'Troopers/min'], ['jungla_kills', 'Jungla/min'], ['net_worth', 'Net worth/min']];
+const ECO_COLS = [['troopers_kills', 'Troopers/min'], ['jungla_kills', 'Jungle/min'], ['net_worth', 'Net worth/min']];
 
 function economia(root, m, tname) {
   const eco = m.economy;
-  if (!eco || !eco.players || !eco.players.length) { root.append(el('p', { class: 'muted' }, 'No disponible: la partida no trae datos de economía.')); return; }
+  if (!eco || !eco.players || !eco.players.length) { root.append(el('p', { class: 'muted' }, 'Not available: the match has no economy data.')); return; }
   const names = eco.source_names || {};
   const sids = Object.keys(names).filter(id => eco.players.some(p => (p.sources || {})[id]));
   const byslot = new Map(m.players.map(p => [p.slot, p]));
-  root.append(el('p', { class: 'muted small' }, 'Almas obtenidas por fuente (total de la partida) y ritmos por minuto. «–» = sin dato.'));
+  root.append(el('p', { class: 'muted small' }, 'Souls earned by source (match total) and per-minute rates. “–” = no data.'));
+  const ecoRows = eco.players.map(p => {
+    const r = { pl: byslot.get(p.slot), slot: p.slot, team: p.team, hero: byslot.get(p.slot)?.hero || `#${p.slot}` };
+    for (const id of sids) r['s' + id] = (p.sources || {})[id] ?? 0;
+    for (const [k] of ECO_COLS) r['r_' + k] = (p.per_min || {})[k] ?? null;
+    return r;
+  });
   for (const t of [0, 1]) {
-    const rows = eco.players.filter(p => p.team === t).map(p => {
-      const r = { pl: byslot.get(p.slot), slot: p.slot, hero: byslot.get(p.slot)?.hero || `#${p.slot}` };
-      for (const id of sids) r['s' + id] = (p.sources || {})[id] ?? 0;
-      for (const [k] of ECO_COLS) r['r_' + k] = (p.per_min || {})[k] ?? null;
-      return r;
-    });
+    const rows = ecoRows.filter(r => r.team === t);
+    // bars share one scale per column across both teams so they can be compared
     const cols = [
-      { key: 'hero', label: 'Héroe', render: r => r.pl ? el('span', { class: 'hero-cell' }, portrait(r.pl, { size: 'sm', shape: 'round' }), r.pl.hero) : r.hero },
-      ...sids.map(id => ({ key: 's' + id, label: names[id], fmt: 'int' })),
-      ...ECO_COLS.map(([k, l]) => ({ key: 'r_' + k, label: l, fmt: '1' })),
+      { key: 'hero', label: 'Hero', render: r => r.pl ? el('span', { class: 'hero-cell' }, portrait(r.pl, { size: 'sm', shape: 'round' }), r.pl.hero) : r.hero },
+      ...sids.map(id => barCol(ecoRows, { key: 's' + id, label: names[id], fmt: 'int' })),
+      ...ECO_COLS.map(([k, l]) => barCol(ecoRows, { key: 'r_' + k, label: l, fmt: '1' })),
     ];
     root.append(el('h4', {}, tname(t)), dataTable(cols, rows, { sortKey: 'r_net_worth' }));
   }
-  const labels = ['0–10 min', '10–20 min', '20 min–fin'];
+  const labels = ['0–10 min', '10–20 min', '20 min–end'];
   const trows = [];
   for (const [k, l] of ECO_COLS) for (const t of [0, 1]) {
     const ph = (eco.teams[String(t)] || {}).per_phase || [];
@@ -546,35 +582,35 @@ function economia(root, m, tname) {
     labels.forEach((_, i) => { r['p' + i] = ph[i] ? (ph[i][k] ?? null) : null; });
     trows.push(r);
   }
-  root.append(el('h4', {}, 'Ritmos por equipo y fase'),
-    dataTable([{ key: 'metric', label: 'Métrica' }, ...labels.map((l, i) => ({ key: 'p' + i, label: l, fmt: '1' }))], trows, {}));
+  root.append(el('h4', {}, 'Rates by team and phase'),
+    dataTable([{ key: 'metric', label: 'Metric' }, ...labels.map((l, i) => ({ key: 'p' + i, label: l, fmt: '1' }))], trows, {}));
 }
 
 async function minimapa(root, m, tname) {
-  const status = el('div', {}, spinner('Decodificando posiciones…'));
+  const status = el('div', {}, spinner('Decoding positions…'));
   root.append(status);
   let pos, info;
   try { [pos, info] = await Promise.all([api.get(`/api/matches/${m.match_id}/positions?step=2`), loadMapInfo()]); }
-  catch (e) { status.replaceWith(errorBox(e.message, () => { root.innerHTML = ''; minimapa(root, m, tname); }, 'No se pudieron cargar las posiciones')); return; }
+  catch (e) { status.replaceWith(errorBox(e.message, () => { root.innerHTML = ''; minimapa(root, m, tname); }, 'Could not load the positions')); return; }
   status.remove();
   const dur = m.duration_s, step = pos.interval_s;
   const st = { team: 'all', slot: 'all', from: 0, to: Math.ceil(dur / 60), heat: true, deaths: true, noObj: false, lanes: true, objImgs: false, koth: false, objectives: false, rotate: false };
-  const teamSel = el('select', { 'aria-label': 'Equipo' }, [['all', 'Ambos equipos'], ['0', tname(0)], ['1', tname(1)]].map(([v, l]) => el('option', { value: v }, l)));
-  const slotSel = el('select', { 'aria-label': 'Jugador' }, el('option', { value: 'all' }, 'Todos los jugadores'),
+  const teamSel = el('select', { 'aria-label': 'Team' }, [['all', 'Both teams'], ['0', tname(0)], ['1', tname(1)]].map(([v, l]) => el('option', { value: v }, l)));
+  const slotSel = el('select', { 'aria-label': 'Player' }, el('option', { value: 'all' }, 'All players'),
     m.players.map(p => el('option', { value: p.slot }, `${p.hero} · ${pname(p)} (${tname(p.team)})`)));
-  const from = el('input', { 'aria-label': 'Desde el minuto', type: 'number', min: 0, max: st.to, value: 0, style: { width: '64px' } });
-  const to = el('input', { 'aria-label': 'Hasta el minuto', type: 'number', min: 0, max: st.to, value: st.to, style: { width: '64px' } });
+  const from = el('input', { 'aria-label': 'From minute', type: 'number', min: 0, max: st.to, value: 0, style: { width: '64px' } });
+  const to = el('input', { 'aria-label': 'To minute', type: 'number', min: 0, max: st.to, value: st.to, style: { width: '64px' } });
   const chk = (key, label) => { const c = el('input', { type: 'checkbox', checked: st[key] }); c.addEventListener('change', () => { st[key] = c.checked; draw(); }); return el('label', {}, c, label); };
   const noObjBox = el('input', { type: 'checkbox' });
   noObjBox.addEventListener('change', () => { st.noObj = noObjBox.checked; draw(); });
   const chkNoObj = el('label', {}, noObjBox, 'Exclude objective fights');
   const box = el('div');
-  const map = new MapView(box, { size: 820, label: `Minimapa de la partida ${m.match_id}` });
+  const map = new MapView(box, { size: 820, label: `Minimap of match ${m.match_id}` });
   const counts = el('div', { class: 'muted small' });
-  root.append(el('div', { class: 'row' }, teamSel, slotSel, el('label', {}, 'minuto', from, '–', to), chk('heat', 'calor de posiciones'), chk('deaths', 'muertes ✕'), chkNoObj,
-    chk('lanes', 'carriles'), chk('objImgs', 'objetivos'), chk('koth', 'KOTH'), chk('objectives', 'códigos de objetivo'), chk('rotate', 'girar 180°'), el('button', { onclick: () => map.exportPNG(`minimapa_${m.match_id}.png`) }, 'Exportar PNG')),
-    legend([[COLORS.t0, tname(0)], [COLORS.t1, tname(1)], [COLORS.neutral, 'muerte (color = equipo de la víctima)', 'x']]), counts, box,
-    el('p', { class: 'muted small' }, `Calibración: ${info.calibration?.source || '—'}. Las posiciones con vida 0 (muerto) se descartan.`));
+  root.append(el('div', { class: 'row' }, teamSel, slotSel, el('label', {}, 'minute', from, '–', to), chk('heat', 'position heat'), chk('deaths', 'deaths ✕'), chkNoObj,
+    chk('lanes', 'lanes'), chk('objImgs', 'objectives'), chk('koth', 'KOTH'), chk('objectives', 'objective codes'), chk('rotate', 'rotate 180°'), el('button', { onclick: () => map.exportPNG(`minimap_${m.match_id}.png`) }, 'Export PNG')),
+    legend([[COLORS.t0, tname(0)], [COLORS.t1, tname(1)], [COLORS.neutral, 'death (colour = victim’s team)', 'x']]), counts, box,
+    el('p', { class: 'muted small' }, `Calibration: ${info.calibration?.source || '—'}. Positions with 0 health (dead) are discarded.`));
   for (const [i, k] of [[teamSel, 'team'], [slotSel, 'slot']]) i.addEventListener('change', () => { st[k] = i.value; draw(); });
   for (const [i, k] of [[from, 'from'], [to, 'to']]) i.addEventListener('input', () => { st[k] = +i.value; draw(); });
 
@@ -597,7 +633,7 @@ async function minimapa(root, m, tname) {
       n += pts.length;
       layers.push({ kind: 'heat', points: pts, color: team ? COLORS.t1 : COLORS.t0, radius: 12 });
     }
-    // «sin peleas de objetivo» solo se puede calcular con el demo (si no, el KOTH no se identifica)
+    // “without objective fights” can only be computed with the demo (otherwise the KOTH cannot be identified)
     const fx = m.fights, labels = fx?.koth_known && fx.labels?.length === m.deaths.length ? fx.labels : null;
     noObjBox.disabled = !labels;
     noObjBox.title = labels ? '' : 'Needs the match demo: the KOTH cannot be identified without it.';
@@ -624,8 +660,8 @@ async function minimapa(root, m, tname) {
         return [x, y, k.replace(/^team\d_/, '').replace('tier1_', 'G').replace('tier2_', 'W'), k.startsWith('team0') ? COLORS.t0 : COLORS.t1];
       }) });
     }
-    counts.textContent = `${n} posiciones (cada ${step} s) · ${deaths.length} muertes en el rango`
-      + (noObj ? ` (excluded ${nAll - deaths.length} in midboss/KOTH fights)` : '')
+    counts.textContent = `${n} positions (every ${step} s) · ${deaths.length} deaths in range`
+      + (noObj ? ` (excluded ${nAll - deaths.length} in Midboss/KOTH fights)` : '')
       + (!labels ? ' · "Exclude objective fights" needs the match demo' : '');
     map.setLayers(layers, { rotate: st.rotate });
   }
