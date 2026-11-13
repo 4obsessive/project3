@@ -150,6 +150,19 @@ class SideAndReport(unittest.TestCase):
         self.assertTrue(any("n=1" in c["label"] for c in tab["columns"]))
         self.assertTrue(any(r["metrica"] == "Net worth/min" for r in tab["rows"]))
 
+    def test_economia_unreached_phase_is_none(self):
+        import copy
+        short = copy.deepcopy(self.data)
+        short["match_info"]["duration_s"] = 1000
+        out = report.run("Prueba", [short], self.team1)
+        eco = next(s for s in out["sections"] if s["id"] == "economia")
+        tab = next(b for b in eco["blocks"] if b["type"] == "table" and "Ritmos" in b["title"])
+        for r in tab["rows"]:
+            self.assertIsNone(r["us2"])
+            self.assertIsNone(r["them2"])
+            self.assertIsNotNone(r["us0"])
+        self.assertTrue(any("n=0" in c["label"] for c in tab["columns"]))
+
     def test_report_runs_all_metrics(self):
         out = report.run("Prueba", [self.data], self.team1)
         self.assertEqual(out["n"], 1)
