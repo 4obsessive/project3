@@ -36,7 +36,7 @@ export class MapView {
     this.layers = [];
     this.rotate = false;
     this.box = el('div', { class: 'mapbox' });
-    this.canvas = el('canvas', { width: this.size, height: this.size, role: 'img', 'aria-label': opts.label || 'Minimapa' });
+    this.canvas = el('canvas', { width: this.size, height: this.size, role: 'img', 'aria-label': opts.label || 'Minimap' });
     this.msg = el('div', { class: 'map-msg', hidden: true });
     this.box.append(this.canvas, this.msg);
     container.append(this.box);
@@ -78,11 +78,11 @@ export class MapView {
       this.msg.hidden = true;
     } else {
       this.msg.hidden = false;
-      this.msg.textContent = 'No se pudo cargar la imagen del minimapa (static/minimap.png). Se dibujan los datos sin fondo.';
+      this.msg.textContent = 'Could not load the minimap image (static/minimap.png). Data is drawn without a background.';
     }
     if (!this.info.calibration) {
       this.msg.hidden = false;
-      this.msg.textContent = 'Sin calibración del mapa: no se pueden situar los puntos.';
+      this.msg.textContent = 'No map calibration: points cannot be placed.';
       return;
     }
     if (this.grid) this.drawGrid(ctx);
@@ -275,7 +275,7 @@ export class MapView {
     ctx.restore();
   }
 
-  exportPNG(name = 'mapa.png') {
+  exportPNG(name = 'map.png') {
     this.canvas.toBlob(b => downloadBlob(name, b), 'image/png');
   }
 }

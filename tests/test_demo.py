@@ -698,20 +698,20 @@ class ReportWithDemo(unittest.TestCase):
         for k in ("rejuv_nuestros", "rejuv_rival", "dano_nuestro", "dano_rival", "iniciador", "robado", "remontada"):
             self.assertIn(k, keys)
         rows = tables[0]["rows"]
-        self.assertEqual(rows[0]["robado"], "sí")
+        self.assertEqual(rows[0]["robado"], "yes")
         self.assertEqual(rows[1]["robado"], "no")
         self.assertEqual(rows[2]["robado"], "—")
         self.assertEqual(rows[0]["rejuv_nuestros"], 2)
         self.assertEqual(rows[0]["dano_nuestro"], 9000)
         self.assertEqual(tables[0]["n"], 1)
         texts = " ".join(b.get("text", "") for b in sec["blocks"])
-        self.assertIn("Datos del demo en 1 de 1 partidas", texts)
+        self.assertIn("Demo data in 1 of 1 matches", texts)
 
     def test_midboss_section_without_demo(self):
         sec = self.run_report({})["midboss"]
         un = [b for b in sec["blocks"] if b["type"] == "unavailable" and "demo" in b["title"].lower()]
         self.assertTrue(un)
-        self.assertTrue(any(b["type"] == "table" and b.get("title") == "Detalle" for b in sec["blocks"]))
+        self.assertTrue(any(b["type"] == "table" and b.get("title") == "Detail" for b in sec["blocks"]))
 
     def test_koth_section(self):
         sec = self.run_report({109084310: self.summary()})["koth"]
@@ -719,8 +719,8 @@ class ReportWithDemo(unittest.TestCase):
         self.assertTrue(tabs)
         detail = next(b for b in tabs if any(c["key"] == "remontada" for c in b["columns"]))
         self.assertEqual(detail["n"], 1)
-        self.assertEqual([r["completa"] for r in detail["rows"]], ["Este equipo", "Rival", "No completado"])
-        self.assertTrue(all(r["remontada"] in ("sí", "no", "—") for r in detail["rows"]))
+        self.assertEqual([r["completa"] for r in detail["rows"]], ["This team", "Enemy", "Not completed"])
+        self.assertTrue(all(r["remontada"] in ("yes", "no", "—") for r in detail["rows"]))
 
     def _remontadas(self, data, summ):
         out = report.run("Prueba", [data], set(), side_overrides={109084310: self.OUR}, demo_summaries={109084310: summ})
@@ -737,8 +737,8 @@ class ReportWithDemo(unittest.TestCase):
         s = self.summary()
         known = self._remontadas(self.data, s)
         # Con muestras de net worth y equipo que lo mata/completa: «sí» o «no», nunca «—».
-        self.assertTrue(all(v in ("sí", "no") for v in known["midboss"][0]))
-        self.assertEqual([v in ("sí", "no") for v in known["koth"][0]], [True, True, False])
+        self.assertTrue(all(v in ("yes", "no") for v in known["midboss"][0]))
+        self.assertEqual([v in ("yes", "no") for v in known["koth"][0]], [True, True, False])
         sin = copy.deepcopy(self.data)
         for p in sin["match_info"]["players"]:
             p["stats"] = []
@@ -749,7 +749,7 @@ class ReportWithDemo(unittest.TestCase):
     def test_comeback_text_says_net_worth(self):
         res = self._remontadas(self.data, self.summary())
         for sid in ("midboss", "koth"):
-            self.assertIn("net worth (interpolado de las muestras de la partida) < 0,9 × el del rival (regla del 10 %)", res[sid][2])
+            self.assertIn("net worth (interpolated from the match samples) < 0.9 × the enemy's (10% rule)", res[sid][2])
             self.assertNotIn("almas del rival", res[sid][2])
 
     def test_midboss_without_damage_is_missing_not_zero(self):

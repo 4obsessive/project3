@@ -6,7 +6,10 @@ métrica. Para añadir una métrica basta con crear un archivo en scouting/repor
 
 Tipos de bloque:
   text        {text, tone: confirmed|warning|info}
-  table       {title, columns:[{key,label,fmt}], rows:[{...}], n}
+  table       {title, columns:[{key,label,fmt,bar,objective,ids}], rows:[{...}], n}
+              fmt "heroes": retratos de r[ids] (lista de hero_id; por defecto "hero_ids") + el texto de la celda;
+              bar: mini barra en la celda (valor / máximo de la columna); objective: imagen del objetivo en la cabecera
+  cards       {items:[{title, value, n, hero_ids?, objective?, lane?, sub?}]}  datos destacados (solo conteos/medias)
   bars        {title, labels:[...], series:[{name, values, side}], unit, n}
   histogram   {title, series:[{name, values(s), side}], bin_s, n}
   timeline    {title, rows:[{label, events:[{t, label, side, kind}]}], n}
@@ -136,7 +139,7 @@ class ReportCtx:
         """kind: strength | weakness | pattern | improve | opportunity
 
         Con support/total se adjunta el intervalo de Wilson al 90 % y la fuerza de la evidencia frente a
-        `baseline` (la tasa esperada por azar): fuerte (n≥8 y límite inferior > base), moderada (n≥5) o indicio.
+        `baseline` (la tasa esperada por azar): strong (n≥8 y límite inferior > base), moderate (n≥5) o hint.
         Nunca se descarta un hallazgo: se etiqueta."""
         f = {"kind": kind, "text": text, "support": support, "total": total, "baseline": baseline,
              "lo": None, "hi": None, "evidence": None}
@@ -153,12 +156,12 @@ class ReportCtx:
         """Bloque de texto con cuántas partidas analizadas tienen datos del demo."""
         k = self.demo_n
         return {"type": "text", "tone": "confirmed" if k == self.n else "warning",
-                "text": f"Datos del demo en {k} de {self.n} partidas."}
+                "text": f"Demo data in {k} of {self.n} matches."}
 
-    def sample_warning(self, n=None, what="partidas"):
+    def sample_warning(self, n=None, what="matches"):
         n = self.n if n is None else n
         if n < SMALL_SAMPLE:
-            return {"type": "text", "tone": "warning", "text": f"Muestra pequeña: {n} {what} (< {SMALL_SAMPLE}). Tómalo como indicio, no como patrón."}
+            return {"type": "text", "tone": "warning", "text": f"Small sample: {n} {what} (< {SMALL_SAMPLE}). Treat it as a hint, not a pattern."}
         return None
 
 
@@ -215,7 +218,7 @@ def run(team, match_datas, roster, side_overrides=None, params=None, demo_summar
             our, src = auto, "auto"
         sides.append({"match_id": mid, "auto": auto, "side": our, "source": src, "roster_counts": counts})
         if our is None:
-            skipped.append({"match_id": mid, "reason": "No se pudo detectar el lado (ningún jugador de la plantilla o empate). Elige el lado a mano."})
+            skipped.append({"match_id": mid, "reason": "Side not detected (no roster player in the match, or a tie). Choose the side manually."})
             continue
         ctxs.append(MatchCtx(d, our, src, counts, demo_summaries.get(mid), lane_data.get(mid), lane_paths, cal))
     ctx = ReportCtx(team, ctxs, params, skipped)
@@ -263,7 +266,7 @@ def _our_heroes(ctxs, limit=12):
 def _run_one(m, ctx):
     try:
         if ctx.n == 0 and m["id"] != "conclusiones":
-            return {"id": m["id"], "title": m["title"], "blocks": [{"type": "unavailable", "title": m["title"], "reason": "No hay partidas con lado detectado."}]}
+            return {"id": m["id"], "title": m["title"], "blocks": [{"type": "unavailable", "title": m["title"], "reason": "No matches with a detected side."}]}
         out = m["fn"](ctx)
         if isinstance(out, dict):
             blocks = out.get("blocks", [])

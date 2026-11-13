@@ -54,7 +54,7 @@ function objKey(type) {
 }
 
 function guardianSvg(size) {
-  return el('span', { class: `obj-img ${size} obj-guardian`, role: 'img', 'aria-label': 'Guardián',
+  return el('span', { class: `obj-img ${size} obj-guardian`, role: 'img', 'aria-label': 'Guardian',
     html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12z" fill="currentColor" fill-opacity=".25" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>' });
 }
 
@@ -80,15 +80,15 @@ export function objectiveImg(type, ownerTeam = null, { size = 'md' } = {}) {
 }
 
 const LANE_FALLBACK = {
-  1: { nombre: 'York', color: '#F1CC30', alias: 'amarillo' },
-  3: { nombre: 'Broadway', color: '#29b1cc', alias: 'azul' },
-  4: { nombre: 'Greenwich', color: '#59b247', alias: 'verde' },
+  1: { nombre: 'York', color: '#F1CC30', alias: 'yellow' },
+  3: { nombre: 'Broadway', color: '#29b1cc', alias: 'blue' },
+  4: { nombre: 'Greenwich', color: '#59b247', alias: 'green' },
 };
 
 export function laneStyle(laneId, lanes) {
   const l = (lanes && lanes[laneId]) || LANE_FALLBACK[laneId];
   return l ? { nombre: l.nombre, color: l.color || 'var(--muted)', alias: l.alias }
-    : { nombre: `Carril ${laneId}`, color: 'var(--muted)', alias: '' };
+    : { nombre: `Lane ${laneId}`, color: 'var(--muted)', alias: '' };
 }
 
 export function laneChip(laneId, lanes) {

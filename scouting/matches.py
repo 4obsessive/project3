@@ -142,9 +142,9 @@ def load_objective_map(path=None):
 
 
 LANE_DEFAULTS = {
-    1: {"nombre": "York", "color": "#F1CC30", "alias": "amarillo"},
-    3: {"nombre": "Broadway", "color": "#29b1cc", "alias": "azul"},
-    4: {"nombre": "Greenwich", "color": "#59b247", "alias": "verde"},
+    1: {"nombre": "York", "color": "#F1CC30", "alias": "yellow"},
+    3: {"nombre": "Broadway", "color": "#29b1cc", "alias": "blue"},
+    4: {"nombre": "Greenwich", "color": "#59b247", "alias": "green"},
 }
 
 
@@ -158,7 +158,7 @@ def load_lane_styles(path=None):
     colores = {int(k): v for k, v in (raw if isinstance(raw, dict) else {}).items() if isinstance(v, dict)}
     out = {k: dict(v) for k, v in LANE_DEFAULTS.items()}
     for k in set(names) | set(colores):
-        st = out.setdefault(k, {"nombre": f"Carril {k}", "color": "#888888", "alias": ""})
+        st = out.setdefault(k, {"nombre": f"Lane {k}", "color": "#888888", "alias": ""})
         if k in names:
             st["nombre"] = names[k]
         c = colores.get(k) or {}
@@ -195,9 +195,9 @@ def save_objective_map(objs, lanes, path=None, colores=None):
 def objective_label(oid, objs, lanes):
     o = objs.get(oid)
     if not o:
-        return f"Objetivo #{oid}"
+        return f"Objective #{oid}"
     if o.get("carril"):
-        return f"{o['tipo']} · {lanes.get(o['carril'], 'Carril ' + str(o['carril']))}"
+        return f"{o['tipo']} · {lanes.get(o['carril'], 'Lane ' + str(o['carril']))}"
     if o.get("n"):
         return f"{o['tipo']} {o['n']}"
     return o["tipo"]
@@ -308,9 +308,9 @@ def team_networth_at(mi, team, t):
     return sum(stat_at(p, "net_worth", t) or 0 for p in mi.get("players") or [] if p.get("team") == team)
 
 
-GOLD_SOURCES = {1: "Kills", 2: "Troopers", 3: "Jungla", 4: "Objetivos", 5: "Tesoro", 6: "Asistencias", 7: "Denies",
-                8: "Catch-up de equipo", 9: "Asesinato (habilidad)", 10: "Objeto (10)", 11: "Cultist Sacrifice",
-                12: "Rompibles", 13: "Objeto (13)"}
+GOLD_SOURCES = {1: "Kills", 2: "Troopers", 3: "Jungle", 4: "Objectives", 5: "Treasure", 6: "Assists", 7: "Denies",
+                8: "Team catch-up", 9: "Kill (ability)", 10: "Item (10)", 11: "Cultist Sacrifice",
+                12: "Breakables", 13: "Item (13)"}
 
 
 def source_at(player, source, t):

@@ -11,7 +11,7 @@ def _step(r):
     return (r["type"], r["lane"])
 
 
-@metric("carriles", "Guardians y Walkers por carril", order=30)
+@metric("carriles", "Guardians and Walkers by lane", order=30)
 def carriles(ctx):
     objs, lane_names = load_objective_map()
     lanes = sorted({o["carril"] for o in objs.values() if o.get("tipo") in TYPES and o.get("carril")})
@@ -48,24 +48,24 @@ def carriles(ctx):
             times[("taken", r["type"], r["lane"])].append(r["destroyed_s"])
         seq_lost[tuple(_step(r) for r in ours)] += 1 if ours else 0
         seq_taken[tuple(_step(r) for r in theirs)] += 1 if theirs else 0
-        ev = [{"t": r["destroyed_s"], "label": f"{r['label']} perdido", "side": "them", "kind": r["type"], "owner": r["owner_team"]} for r in m.objectives if r["owner_team"] == m.our and r["destroyed_s"]]
-        ev += [{"t": r["destroyed_s"], "label": f"{r['label']} rival destruido", "side": "us", "kind": r["type"], "owner": r["owner_team"]} for r in m.objectives if r["owner_team"] == m.their and r["destroyed_s"]]
-        timeline.append({"label": f"{m.id} ({'V' if m.won else 'D'})", "duration": m.duration, "events": sorted(ev, key=lambda e: e["t"])})
+        ev = [{"t": r["destroyed_s"], "label": f"{r['label']} lost", "side": "them", "kind": r["type"], "owner": r["owner_team"]} for r in m.objectives if r["owner_team"] == m.our and r["destroyed_s"]]
+        ev += [{"t": r["destroyed_s"], "label": f"{r['label']} destroyed (enemy's)", "side": "us", "kind": r["type"], "owner": r["owner_team"]} for r in m.objectives if r["owner_team"] == m.their and r["destroyed_s"]]
+        timeline.append({"label": f"{m.id} ({'W' if m.won else 'L'})", "duration": m.duration, "events": sorted(ev, key=lambda e: e["t"])})
     lanes = [l for l in lanes if l in present] or lanes
-    ln = lambda l: lane_names.get(l, f"Carril {l}")
+    ln = lambda l: lane_names.get(l, f"Lane {l}")
     n = ctx.n
     blocks = [ctx.sample_warning(),
-              {"type": "text", "tone": "info", "text": "Carriles por color: York (amarillo), Broadway (azul) y Greenwich (verde); son los mismos para ambos equipos. "
-                                                         "El mapeo de team_objective_id es inferido y se puede corregir en Partidas › Mapeo de objetivos."}]
-    blocks.append({"type": "bars", "title": "Primer Guardian: carril", "unit": "%", "n": n,
+              {"type": "text", "tone": "info", "text": "Lanes by colour: York (yellow), Broadway (blue) and Greenwich (green); they are the same for both teams. "
+                                                         "The team_objective_id mapping is inferred and can be corrected in Matches › Objective mapping."}]
+    blocks.append({"type": "bars", "title": "First Guardian: lane", "unit": "%", "n": n,
                    "labels": [ln(l) for l in lanes], "lane_ids": list(lanes),
-                   "series": [{"name": "Pierden primero", "side": "them", "values": [round(100 * first_lost[l] / n) for l in lanes]},
-                              {"name": "Presionan primero (destruyen el del rival)", "side": "us", "values": [round(100 * first_taken[l] / n) for l in lanes]}]})
+                   "series": [{"name": "Lose first", "side": "them", "values": [round(100 * first_lost[l] / n) for l in lanes]},
+                              {"name": "Push first (destroy the enemy's)", "side": "us", "values": [round(100 * first_taken[l] / n) for l in lanes]}]})
     fl, ft = stats(first_lost_t), stats(first_taken_t)
     blocks.append({"type": "text", "tone": "confirmed",
-                   "text": f"Carrera del primer Guardian: lo tumban antes que el rival en {race['us']} de {n} partidas; el rival antes en {race['them']}. "
-                           + (f"Primer Guardian perdido: minuto medio {fl['mean'] / 60:.1f}, mediana {fl['median'] / 60:.1f} ({fl['n']} partidas). " if fl["n"] else "No pierden ningún Guardian en la muestra. ")
-                   + (f"Primer Guardian rival destruido: media {ft['mean'] / 60:.1f}, mediana {ft['median'] / 60:.1f} ({ft['n']} partidas)." if ft["n"] else "No destruyen ningún Guardian rival en la muestra.")})
+                   "text": f"First Guardian race: they take one down before the enemy does in {race['us']} of {n} matches; the enemy first in {race['them']}. "
+                           + (f"First Guardian lost: mean minute {fl['mean'] / 60:.1f}, median {fl['median'] / 60:.1f} ({fl['n']} matches). " if fl["n"] else "They lose no Guardian in the sample. ")
+                   + (f"First enemy Guardian destroyed: mean {ft['mean'] / 60:.1f}, median {ft['median'] / 60:.1f} ({ft['n']} matches)." if ft["n"] else "They destroy no enemy Guardian in the sample.")})
     rows = []
     for l in lanes:
         row = {"carril": ln(l), "carril_id": l}
@@ -76,32 +76,32 @@ def carriles(ctx):
                 row[f"{lab}_{tp}_med"] = s["median"]
                 row[f"{lab}_{tp}_avg"] = s["mean"]
         rows.append(row)
-    cols = [{"key": "carril", "label": "Carril", "fmt": "lane"}]
-    for lab, txt in (("perd", "perdido"), ("dest", "destruido al rival")):
+    cols = [{"key": "carril", "label": "Lane", "fmt": "lane"}]
+    for lab, txt in (("perd", "lost"), ("dest", "destroyed (enemy's)")):
         for tp in TYPES:
-            cols += [{"key": f"{lab}_{tp}_n", "label": f"{tp} {txt} (partidas)"},
-                     {"key": f"{lab}_{tp}_avg", "label": "media", "fmt": "mmss"},
-                     {"key": f"{lab}_{tp}_med", "label": "mediana", "fmt": "mmss"}]
-    blocks.append({"type": "table", "title": "Tiempos por carril", "n": n, "columns": cols, "rows": rows})
-    blocks.append({"type": "histogram", "title": "Minuto del primer Guardian", "bin_s": 60, "n": n,
-                   "series": [{"name": "Perdido", "side": "them", "values": first_lost_t}, {"name": "Destruido al rival", "side": "us", "values": first_taken_t}]})
-    for title, seq in (("Orden habitual en que pierden Guardians/Walkers", seq_lost), ("Orden habitual en que destruyen Guardians/Walkers rivales", seq_taken)):
+            cols += [{"key": f"{lab}_{tp}_n", "label": f"{tp} {txt} (matches)", "objective": tp},
+                     {"key": f"{lab}_{tp}_avg", "label": "mean", "fmt": "mmss"},
+                     {"key": f"{lab}_{tp}_med", "label": "median", "fmt": "mmss"}]
+    blocks.append({"type": "table", "title": "Times by lane", "n": n, "columns": cols, "rows": rows})
+    blocks.append({"type": "histogram", "title": "Minute of the first Guardian", "bin_s": 60, "n": n,
+                   "series": [{"name": "Lost", "side": "them", "values": first_lost_t}, {"name": "Destroyed (enemy's)", "side": "us", "values": first_taken_t}]})
+    for title, seq in (("Usual order in which they lose Guardians/Walkers", seq_lost), ("Usual order in which they destroy enemy Guardians/Walkers", seq_taken)):
         rows = [{"orden": [{"tipo": tp, "carril": l} for tp, l in k], "partidas": v, "pct": round(100 * v / n)} for k, v in seq.most_common(6) if k]
         blocks.append({"type": "table", "title": title, "n": n,
-                       "columns": [{"key": "orden", "label": "Secuencia", "fmt": "lane_seq"}, {"key": "partidas", "label": "Partidas"}, {"key": "pct", "label": "%"}], "rows": rows})
-    blocks.append({"type": "timeline", "title": "Línea de tiempo por partida", "n": n, "rows": timeline})
+                       "columns": [{"key": "orden", "label": "Sequence", "fmt": "lane_seq"}, {"key": "partidas", "label": "Matches"}, {"key": "pct", "label": "%", "bar": True}], "rows": rows})
+    blocks.append({"type": "timeline", "title": "Timeline per match", "n": n, "rows": timeline})
 
     # patrones (con 3 carriles, «el primero en caer» tiene una tasa base de 1/3 por azar)
     base = 1 / max(len(lanes), 1)
     if n >= 3:
         lane, cnt = (first_lost.most_common(1) or [(None, 0)])[0]
         if lane and cnt / n >= 0.5:
-            ctx.finding("weakness", f"Pierden primero el Guardian del {ln(lane)} en {cnt} de {n} partidas.", cnt, n, baseline=base)
+            ctx.finding("weakness", f"They lose the {ln(lane)} Guardian first in {cnt} of {n} matches.", cnt, n, baseline=base)
         lane, cnt = (first_taken.most_common(1) or [(None, 0)])[0]
         if lane and cnt / n >= 0.5:
-            ctx.finding("pattern", f"Presionan primero el {ln(lane)}: es el primer Guardian rival que cae en {cnt} de {n} partidas.", cnt, n, baseline=base)
+            ctx.finding("pattern", f"They push {ln(lane)} first: it is the first enemy Guardian to fall in {cnt} of {n} matches.", cnt, n, baseline=base)
         if race["us"] / n >= 0.6:
-            ctx.finding("strength", f"Tumban el primer Guardian rival antes de perder el suyo en {race['us']} de {n} partidas.", race["us"], n)
+            ctx.finding("strength", f"They take down the first enemy Guardian before losing their own in {race['us']} of {n} matches.", race["us"], n)
         elif race["them"] / n >= 0.6:
-            ctx.finding("weakness", f"Pierden su primer Guardian antes de tumbar uno rival en {race['them']} de {n} partidas.", race["them"], n)
+            ctx.finding("weakness", f"They lose their first Guardian before taking down an enemy one in {race['them']} of {n} matches.", race["them"], n)
     return blocks

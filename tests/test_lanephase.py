@@ -409,7 +409,7 @@ class ReportLanes(unittest.TestCase):
         t = next(b for b in sec["fase_lineas"]["blocks"] if b.get("kind") == "duos")
         r = t["rows"][0]
         self.assertIn(r["g_taken"] is None or r["g_lost"] is None, (True,))
-        self.assertTrue(r["g_taken_no"] == "1 de 1" or r["g_lost_no"] == "1 de 1")
+        self.assertTrue(r["g_taken_no"] == "1 of 1" or r["g_lost_no"] == "1 of 1")
 
     def test_names_and_heroes_populated(self):
         from scouting import report
@@ -423,7 +423,7 @@ class ReportLanes(unittest.TestCase):
         self.assertEqual(len(rows), 6)
         self.assertEqual(names[acc[0]], "Ana")
         self.assertEqual(names[acc[1]], "Steam Bob")
-        self.assertEqual(names[acc[2]], f"Cuenta {acc[2]}")
+        self.assertEqual(names[acc[2]], f"Account {acc[2]}")
         duo = next(b for b in sec["fase_lineas"]["blocks"] if b.get("kind") == "duos")["rows"][0]["duo"]
         self.assertTrue(duo.startswith("H"))
 
@@ -457,7 +457,7 @@ class ReportLanes(unittest.TestCase):
         sec = self._mixed(3, 2)
         t = next(b for b in sec["blocks"] if b.get("kind") == "ganks")
         self.assertEqual(t["n"], 3)
-        self.assertIn("solo partidas con demo", t["note"])
+        self.assertIn("only matches with demo", t["note"])
         for r in t["rows"]:
             self.assertEqual(r["n"], 3)
             ref = self.lp["lanes"][str(r["carril_id"])]["1"]
@@ -465,7 +465,7 @@ class ReportLanes(unittest.TestCase):
             self.assertEqual(r["made_n"], 3 if ref["first_gank_made"] else 0)
         # hallazgos sobre las 3 partidas con demo, no sobre las 5
         import re
-        found = re.findall(r"[Gg]ank\w* en [^.]*?en (\d+) de (\d+) partidas", json.dumps(self.mixed_out, ensure_ascii=False))
+        found = re.findall(r"[Gg]ank\w* in [^.]*?in (\d+) of (\d+) matches", json.dumps(self.mixed_out, ensure_ascii=False))
         self.assertTrue(found)
         for _, total in found:
             self.assertEqual(total, "3")
@@ -473,7 +473,7 @@ class ReportLanes(unittest.TestCase):
     def test_gank_table_unavailable_without_demo(self):
         sec = self._mixed(0, 2)
         self.assertFalse(any(b.get("kind") == "ganks" for b in sec["blocks"]))
-        self.assertTrue(any(b.get("type") == "unavailable" and "gankeo" in b.get("title", "").lower() for b in sec["blocks"]))
+        self.assertTrue(any(b.get("type") == "unavailable" and "gank" in b.get("title", "").lower() for b in sec["blocks"]))
 
 
 class ReportLoadsOnce(unittest.TestCase):
@@ -581,9 +581,9 @@ class LanePhaseFallbacks(unittest.TestCase):
         ld = {135801973: {"rows": self.rows, "rules": self.rules, "limit": 30000}}
         out = report.run("T", [{"match_info": self.mi}], roster, None, None, None, lane_data=ld)
         sec = {s["id"]: s for s in out["sections"]}
-        cov = next(b for b in sec["fase_lineas"]["blocks"] if b.get("type") == "text" and "Con demo" in b["text"])
-        self.assertIn("Con demo de fase de líneas: 0 de 1", cov["text"])
-        self.assertIn("incompleto", cov["text"])
+        cov = next(b for b in sec["fase_lineas"]["blocks"] if b.get("type") == "text" and "With laning-phase demo" in b["text"])
+        self.assertIn("With laning-phase demo: 0 of 1", cov["text"])
+        self.assertIn("Incomplete demo", cov["text"])
         for t in (b for b in sec["fase_lineas"]["blocks"] if b.get("kind") == "duos"):
             self.assertIsNone(t["rows"][0]["dmg_done"])
 

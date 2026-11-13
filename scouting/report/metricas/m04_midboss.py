@@ -4,7 +4,7 @@ from collections import Counter
 from .. import metric, stats
 from ... import matches as M
 
-REGLA = "net worth (interpolado de las muestras de la partida) < 0,9 × el del rival (regla del 10 %)"
+REGLA = "net worth (interpolated from the match samples) < 0.9 × the enemy's (10% rule)"
 
 
 @metric("midboss", "Midboss", order=40)
@@ -38,29 +38,29 @@ def midboss(ctx):
     n = ctx.n
     blocks = [ctx.sample_warning(),
               {"type": "text", "tone": "info",
-               "text": f"Ventana de kills previas: {win} s. La diferencia de net worth es la de ese segundo (interpolada de las muestras cada pocos minutos)."}]
+               "text": f"Window for prior kills: {win} s. The net worth difference is the one at that second (interpolated from samples every few minutes)."}]
     if not events:
-        blocks.append({"type": "text", "tone": "confirmed", "text": f"No hay Midboss en ninguna de las {n} partidas."})
+        blocks.append({"type": "text", "tone": "confirmed", "text": f"No Midboss in any of the {n} matches."})
         return blocks
     ours = [e for e in events if e["killer"] == "us"]
     theirs = [e for e in events if e["killer"] == "them"]
     blocks.append({"type": "text", "tone": "confirmed",
-                   "text": f"Midboss en {matches_with} de {n} partidas ({len(events)} muertes del Midboss). Lo mata este equipo {len(ours)} veces y el rival {len(theirs)}. "
-                           f"El primero de la partida: este equipo {first_by['us']}, rival {first_by['them']}."})
+                   "text": f"Midboss in {matches_with} of {n} matches ({len(events)} Midboss kills). This team kills it {len(ours)} times and the enemy {len(theirs)}. "
+                           f"First of the match: this team {first_by['us']}, enemy {first_by['them']}."})
     rows = []
-    for label, evs in (("Este equipo", ours), ("Rival", theirs), ("Primer Midboss de este equipo", [e for e in ours if e["n"] == 1]),
-                       ("Primer Midboss del rival", [e for e in theirs if e["n"] == 1])):
+    for label, evs in (("This team", ours), ("Enemy", theirs), ("First Midboss of this team", [e for e in ours if e["n"] == 1]),
+                       ("First Midboss of the enemy", [e for e in theirs if e["n"] == 1])):
         s = stats([e["t"] for e in evs])
         rows.append({"quien": label, "veces": len(evs), "media": s["mean"], "mediana": s["median"], "min": s["min"], "max": s["max"]})
-    blocks.append({"type": "table", "title": "Minuto del Midboss", "n": n,
-                   "columns": [{"key": "quien", "label": "Lo mata"}, {"key": "veces", "label": "Veces"}, {"key": "media", "label": "Media", "fmt": "mmss"},
-                               {"key": "mediana", "label": "Mediana", "fmt": "mmss"}, {"key": "min", "label": "Mín.", "fmt": "mmss"}, {"key": "max", "label": "Máx.", "fmt": "mmss"}],
+    blocks.append({"type": "table", "title": "Midboss minute", "n": n,
+                   "columns": [{"key": "quien", "label": "Killed by", "objective": "Midboss"}, {"key": "veces", "label": "Times", "bar": True}, {"key": "media", "label": "Mean", "fmt": "mmss"},
+                               {"key": "mediana", "label": "Median", "fmt": "mmss"}, {"key": "min", "label": "Min", "fmt": "mmss"}, {"key": "max", "label": "Max", "fmt": "mmss"}],
                    "rows": rows})
-    blocks.append({"type": "histogram", "title": "Minuto del Midboss", "bin_s": 120, "n": n,
-                   "series": [{"name": "Este equipo", "side": "us", "values": [e["t"] for e in ours if e["t"] is not None]},
-                              {"name": "Rival", "side": "them", "values": [e["t"] for e in theirs if e["t"] is not None]}]})
+    blocks.append({"type": "histogram", "title": "Midboss minute", "bin_s": 120, "n": n,
+                   "series": [{"name": "This team", "side": "us", "values": [e["t"] for e in ours if e["t"] is not None]},
+                              {"name": "Enemy", "side": "them", "values": [e["t"] for e in theirs if e["t"] is not None]}]})
     scen = []
-    for label, evs in (("Cuando lo mata este equipo", ours), ("Cuando lo mata el rival", theirs)):
+    for label, evs in (("When this team kills it", ours), ("When the enemy kills it", theirs)):
         if not evs:
             scen.append({"escenario": label, "veces": 0})
             continue
@@ -70,35 +70,35 @@ def midboss(ctx):
             "kill_adv": stats([e["kill_adv"] for e in evs])["median"], "nw_adv": stats([e["nw_adv"] for e in evs])["median"],
             "ganadas": sum(1 for e in evs if e["won"]),
         })
-    blocks.append({"type": "table", "title": "Escenarios (desde el punto de vista de este equipo)", "n": n,
-                   "columns": [{"key": "escenario", "label": "Escenario"}, {"key": "veces", "label": "Veces"},
-                               {"key": "kills_us", "label": f"Kills propias en {win}s (media)", "fmt": "1"},
-                               {"key": "kills_them", "label": f"Kills rivales en {win}s (media)", "fmt": "1"},
-                               {"key": "kill_adv", "label": "Ventaja de kills (mediana)", "fmt": "signed"},
-                               {"key": "nw_adv", "label": "Ventaja net worth (mediana)", "fmt": "signed0"},
-                               {"key": "ganadas", "label": "Partidas ganadas"}],
+    blocks.append({"type": "table", "title": "Scenarios (from this team's point of view)", "n": n,
+                   "columns": [{"key": "escenario", "label": "Scenario", "objective": "Midboss"}, {"key": "veces", "label": "Times"},
+                               {"key": "kills_us", "label": f"Own kills in {win}s (mean)", "fmt": "1"},
+                               {"key": "kills_them", "label": f"Enemy kills in {win}s (mean)", "fmt": "1"},
+                               {"key": "kill_adv", "label": "Kill lead (median)", "fmt": "signed"},
+                               {"key": "nw_adv", "label": "Net worth lead (median)", "fmt": "signed0"},
+                               {"key": "ganadas", "label": "Matches won"}],
                    "rows": scen})
-    blocks.append({"type": "table", "title": "Detalle", "n": n,
-                   "columns": [{"key": "match_id", "label": "Partida"}, {"key": "n", "label": "#"}, {"key": "t", "label": "Minuto", "fmt": "mmss"},
-                               {"key": "killer_txt", "label": "Lo mata"}, {"key": "claimer_txt", "label": "Lo reclama"},
-                               {"key": "kills_us", "label": "Kills propias"}, {"key": "kills_them", "label": "Kills rival"},
-                               {"key": "kill_adv", "label": "Ventaja kills", "fmt": "signed"}, {"key": "nw_adv", "label": "Ventaja NW", "fmt": "signed0"}],
-                   "rows": [dict(e, killer_txt="Este equipo" if e["killer"] == "us" else "Rival",
-                                 claimer_txt="Este equipo" if e["claimer"] == "us" else "Rival") for e in events]})
+    blocks.append({"type": "table", "title": "Detail", "n": n,
+                   "columns": [{"key": "match_id", "label": "Match"}, {"key": "n", "label": "#"}, {"key": "t", "label": "Time", "fmt": "mmss"},
+                               {"key": "killer_txt", "label": "Killed by", "objective": "Midboss"}, {"key": "claimer_txt", "label": "Claimed by"},
+                               {"key": "kills_us", "label": "Own kills"}, {"key": "kills_them", "label": "Enemy kills"},
+                               {"key": "kill_adv", "label": "Kill lead", "fmt": "signed"}, {"key": "nw_adv", "label": "NW lead", "fmt": "signed0"}],
+                   "rows": [dict(e, killer_txt="This team" if e["killer"] == "us" else "Enemy",
+                                 claimer_txt="This team" if e["claimer"] == "us" else "Enemy") for e in events]})
     blocks.extend(_demo_blocks(ctx))
     # patrones
     if n >= 3:
         if first_by["us"] / n >= 0.6:
-            ctx.finding("strength", f"Se llevan el primer Midboss en {first_by['us']} de {n} partidas.", first_by["us"], n)
+            ctx.finding("strength", f"They take the first Midboss in {first_by['us']} of {n} matches.", first_by["us"], n)
     return blocks
 
 
 def _yn(v):
-    return "—" if v is None else ("sí" if v else "no")
+    return "—" if v is None else ("yes" if v else "no")
 
 
 def _remontada(mi, t, team):
-    """«sí»/«no» si el equipo `team` estaba en remontada en t; «—» si falta el equipo, el segundo o el net worth."""
+    """«yes»/«no» si el equipo `team` estaba en remontada en t; «—» si falta el equipo, el segundo o el net worth."""
     if team is None:
         return "—"
     cb = M.comeback_team_at(mi, t)
@@ -109,8 +109,8 @@ def _demo_blocks(ctx):
     k = ctx.demo_n
     cov = ctx.demo_coverage()
     if not k:
-        return [cov, {"type": "unavailable", "title": "Daño, rejuvenators y robos del Midboss (demo)",
-                      "reason": "Ninguna partida analizada tiene datos del demo (pendiente, sin demo o con error)."}]
+        return [cov, {"type": "unavailable", "title": "Midboss damage, rejuvenators and steals (demo)",
+                      "reason": "No analysed match has demo data (pending, no demo, or failed)."}]
     rows = []
     taken_us = taken_them = steals_made = steals_suffered = 0
     for m in ctx.matches:
@@ -130,29 +130,29 @@ def _demo_blocks(ctx):
             rows.append({
                 "match_id": m.id, "n": e.get("n"), "t": e.get("t"),
                 "dano_nuestro": dm.get(str(m.our)), "dano_rival": dm.get(str(m.their)),
-                "iniciador": {"us": "Este equipo", "them": "Rival"}.get(m.rel(e.get("initiator")), "—"),
+                "iniciador": {"us": "This team", "them": "Enemy"}.get(m.rel(e.get("initiator")), "—"),
                 "robado": _yn(e.get("stolen")),
                 "rejuv_nuestros": rj.get(str(m.our)), "rejuv_rival": rj.get(str(m.their)),
                 "remontada": _remontada(m.mi, e.get("t"), kt),
             })
     out = [cov]
     if not rows:
-        out.append({"type": "unavailable", "title": "Daño, rejuvenators y robos del Midboss (demo)",
-                    "reason": "Los demos analizados no registran ninguna muerte del Midboss."})
+        out.append({"type": "unavailable", "title": "Midboss damage, rejuvenators and steals (demo)",
+                    "reason": "The analysed demos record no Midboss kill."})
         return out
     out.append({"type": "text", "tone": "info",
-                "text": "Iniciador: el equipo que más daño hizo al Midboss. Robado: lo mata el equipo que no lo inició (solo si hay daño registrado). "
-                        f"Remontada: el equipo que lo mata tenía {REGLA} en ese segundo; «—» si no hay muestras de net worth."})
+                "text": "Initiator: the team that dealt the most damage to the Midboss. Stolen: killed by the team that did not start it (only when damage is recorded). "
+                        f"Comeback: the team that kills it had {REGLA} at that second; «—» if there are no net worth samples."})
     n_mb = len(rows)
     out.append({"type": "text", "tone": "confirmed",
-                "text": f"Rejuvenators cogidos en {n_mb} Midboss: este equipo {taken_us} (media {taken_us / n_mb:.1f} por Midboss), rival {taken_them} (media {taken_them / n_mb:.1f}). "
-                        f"Robos: este equipo {steals_made}, sufridos {steals_suffered}. "
-                        f"Midboss muertos en remontada del que lo mata: {sum(1 for r in rows if r['remontada'] == 'sí')} de {n_mb}."})
-    out.append({"type": "table", "title": "Midboss: daño, rejuvenators y robo (demo)", "n": k,
-                "columns": [{"key": "match_id", "label": "Partida"}, {"key": "n", "label": "#"}, {"key": "t", "label": "Minuto", "fmt": "mmss"},
-                            {"key": "dano_nuestro", "label": "Daño este equipo", "fmt": "int"}, {"key": "dano_rival", "label": "Daño rival", "fmt": "int"},
-                            {"key": "iniciador", "label": "Lo inicia"}, {"key": "robado", "label": "Robado"},
-                            {"key": "rejuv_nuestros", "label": "Rejuv. este equipo"}, {"key": "rejuv_rival", "label": "Rejuv. rival"},
-                            {"key": "remontada", "label": "En remontada"}],
+                "text": f"Rejuvenators taken in {n_mb} Midboss: this team {taken_us} (mean {taken_us / n_mb:.1f} per Midboss), enemy {taken_them} (mean {taken_them / n_mb:.1f}). "
+                        f"Steals: by this team {steals_made}, suffered {steals_suffered}. "
+                        f"Midboss killed during a comeback of the killer: {sum(1 for r in rows if r['remontada'] == 'yes')} of {n_mb}."})
+    out.append({"type": "table", "title": "Midboss: damage, rejuvenators and steal (demo)", "n": k,
+                "columns": [{"key": "match_id", "label": "Match"}, {"key": "n", "label": "#"}, {"key": "t", "label": "Time", "fmt": "mmss"},
+                            {"key": "dano_nuestro", "label": "Damage this team", "fmt": "int", "bar": True}, {"key": "dano_rival", "label": "Damage enemy", "fmt": "int", "bar": True},
+                            {"key": "iniciador", "label": "Started by"}, {"key": "robado", "label": "Stolen"},
+                            {"key": "rejuv_nuestros", "label": "Rejuv. this team", "objective": "Rejuvenator"}, {"key": "rejuv_rival", "label": "Rejuv. enemy", "objective": "Rejuvenator"},
+                            {"key": "remontada", "label": "In comeback"}],
                 "rows": rows})
     return out

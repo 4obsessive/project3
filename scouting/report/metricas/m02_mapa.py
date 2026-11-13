@@ -6,7 +6,7 @@ from ... import fights
 from ...minimap import load_calibration
 
 
-@metric("mapa", "Kills y muertes en el minimapa", order=20)
+@metric("mapa", "Kills and deaths on the minimap", order=20)
 def mapa(ctx):
     cal = ctx.calibration or load_calibration()
     normalize = bool(ctx.params.get("normalize"))
@@ -62,18 +62,18 @@ def mapa(ctx):
                     rmatch_k[c].add(m.id)
     cells = set(cell_k) | set(cell_d)
     balance = [[c[0], c[1], cell_k[c] - cell_d[c]] for c in cells]
-    note = ("Normalizado: las partidas jugadas como equipo 1 se giran 180° para que la base propia quede siempre abajo."
-            if normalize else "Sin normalizar: cada punto está en su posición real del mapa (equipo 0 abajo).")
+    note = ("Normalized: matches played as team 1 are rotated 180° so that the own base is always at the bottom."
+            if normalize else "Not normalized: each point is at its real map position (team 0 at the bottom).")
     blocks = [
         ctx.sample_warning(),
         {"type": "text", "tone": "info",
-         "text": f"Kill = lugar donde murió el rival a manos de este equipo. Muerte = lugar donde murió un jugador del equipo. {note}"},
-        {"type": "map", "title": "Kills (●) y muertes (✕)", "n": ctx.n, "normalized": normalize, "grid": GRID,
+         "text": f"Kill = place where an enemy was killed by this team. Death = place where a player of this team died. {note}"},
+        {"type": "map", "title": "Kills (●) and deaths (✕)", "n": ctx.n, "normalized": normalize, "grid": GRID,
          "layers": [
              {"kind": "points", "name": f"Kills ({len(kills_pts)})", "side": "us", "points": kills_pts},
-             {"kind": "crosses", "name": f"Muertes ({len(death_pts)})", "side": "them", "points": death_pts},
+             {"kind": "crosses", "name": f"Deaths ({len(death_pts)})", "side": "them", "points": death_pts},
          ]},
-        {"type": "map", "title": "Balance por zona (kills − muertes)", "n": ctx.n, "normalized": normalize, "grid": GRID,
+        {"type": "map", "title": "Balance by zone (kills − deaths)", "n": ctx.n, "normalized": normalize, "grid": GRID,
          "layers": [{"kind": "cells", "name": "Balance", "cells": balance, "diverging": True, "labels": True}]},
     ]
 
@@ -89,23 +89,23 @@ def mapa(ctx):
             rows.append({"zona": cell_name(c), "eventos": v, "partidas": len(matches_by_cell[c]),
                          "pct": round(100 * len(matches_by_cell[c]) / n)})
             hl.append([c[0], c[1], cell_name(c)])
-        return {"type": "table", "title": label, "n": n, "note": "Zonas = celdas de la cuadrícula dibujada sobre el mapa.",
+        return {"type": "table", "title": label, "n": n, "note": "Zones = cells of the grid drawn over the map.",
                 "map": zone_map(hl, side, label),
-                "columns": [{"key": "zona", "label": "Zona (ver mapa)"}, {"key": "eventos", "label": "Total"},
-                            {"key": "partidas", "label": "Partidas en que ocurre"}, {"key": "pct", "label": "% partidas"}],
+                "columns": [{"key": "zona", "label": "Zone (see map)"}, {"key": "eventos", "label": "Total", "bar": True},
+                            {"key": "partidas", "label": "Matches where it happens"}, {"key": "pct", "label": "% of matches", "bar": True}],
                 "rows": rows}
 
-    blocks.append(top(cell_d, match_d, "Zonas con más muertes", "them"))
-    blocks.append(top(cell_k, match_k, "Zonas con más kills", "us"))
+    blocks.append(top(cell_d, match_d, "Zones with most deaths", "them"))
+    blocks.append(top(cell_k, match_k, "Zones with most kills", "us"))
     bal_rows = sorted(({"zona": cell_name(c), "kills": cell_k[c], "muertes": cell_d[c], "balance": cell_k[c] - cell_d[c], "_c": c} for c in cells),
                       key=lambda r: r["balance"])
     if bal_rows:
         shown = bal_rows[:4] + [r for r in bal_rows[-4:][::-1] if r not in bal_rows[:4]]
         hl = [[r["_c"][0], r["_c"][1], r["zona"], "us" if r["balance"] > 0 else "them" if r["balance"] < 0 else "neutral"] for r in shown]
-        blocks.append({"type": "table", "title": "Dónde ganan y pierden enfrentamientos", "n": ctx.n,
-                       "columns": [{"key": "zona", "label": "Zona (ver mapa)"}, {"key": "kills", "label": "Kills"},
-                                   {"key": "muertes", "label": "Muertes"}, {"key": "balance", "label": "Balance"}],
-                       "map": zone_map(hl, "us", "Balance por zona"),
+        blocks.append({"type": "table", "title": "Where they win and lose fights", "n": ctx.n,
+                       "columns": [{"key": "zona", "label": "Zone (see map)"}, {"key": "kills", "label": "Kills"},
+                                   {"key": "muertes", "label": "Deaths"}, {"key": "balance", "label": "Balance"}],
+                       "map": zone_map(hl, "us", "Balance by zone"),
                        "rows": [{k: v for k, v in r.items() if k != "_c"} for r in shown]})
     blocks += _sin_objetivos(ctx, normalize, incl, excl, split, rk_pts, rd_pts, rcell_k, rcell_d, rmatch_k, rmatch_d, top)
     # patrones: zonas donde mueren en al menos la mitad de las partidas y con balance negativo
@@ -113,12 +113,12 @@ def mapa(ctx):
         # solo las 3 zonas más marcadas de cada tipo, para no llenar las conclusiones de ruido
         weak = sorted((c for c in cells if len(match_d[c]) / ctx.n >= 0.5 and cell_d[c] > cell_k[c]), key=lambda c: cell_k[c] - cell_d[c])[:3]
         for c in weak:
-            ctx.finding("weakness", f"Mueren repetidamente en la zona {cell_name(c)} del mapa ({cell_d[c]} muertes vs {cell_k[c]} kills; en {len(match_d[c])} de {ctx.n} partidas).", len(match_d[c]), ctx.n)
+            ctx.finding("weakness", f"They die repeatedly in map zone {cell_name(c)} ({cell_d[c]} deaths vs {cell_k[c]} kills; in {len(match_d[c])} of {ctx.n} matches).", len(match_d[c]), ctx.n)
         strong = sorted((c for c in cells if len(match_k[c]) / ctx.n >= 0.5 and cell_k[c] >= 2 * max(cell_d[c], 1)), key=lambda c: cell_d[c] - cell_k[c])[:3]
         for c in strong:
-            ctx.finding("strength", f"Ganan peleas de forma repetida en la zona {cell_name(c)} del mapa ({cell_k[c]} kills vs {cell_d[c]} muertes; en {len(match_k[c])} de {ctx.n} partidas).", len(match_k[c]), ctx.n)
+            ctx.finding("strength", f"They repeatedly win fights in map zone {cell_name(c)} ({cell_k[c]} kills vs {cell_d[c]} deaths; in {len(match_k[c])} of {ctx.n} matches).", len(match_k[c]), ctx.n)
     else:
-        blocks.append({"type": "text", "tone": "info", "text": "Las conclusiones por zona solo se generan con el lado normalizado (si no, las zonas mezclan bases distintas)."})
+        blocks.append({"type": "text", "tone": "info", "text": "Zone conclusions are only produced with the side normalized (otherwise zones mix different bases)."})
     return blocks
 
 
@@ -130,14 +130,15 @@ def _sin_objetivos(ctx, normalize, incl, excl, split, rk_pts, rd_pts, rcell_k, r
     if not incl:
         return out
     names = {"midboss": "Midboss fights", "koth": "KOTH fights", "rest": "Rest (no objective fight)", "unknown": "No position (not on maps)"}
-    rows = [{"tipo": t, "label": names[t], "kills": k, "deaths": d, "total": k + d} for t, (k, d) in split.items()]
+    obj = {"midboss": "Midboss", "koth": "KOTH"}
+    rows = [{"tipo": t, "label": names[t], "objective": obj.get(t), "kills": k, "deaths": d, "total": k + d} for t, (k, d) in split.items()]
     tot = [sum(v[i] for v in split.values()) for i in (0, 1)]
     rows.append({"tipo": "total", "label": "Total", "kills": tot[0], "deaths": tot[1], "total": sum(tot)})
     out.append({"type": "table", "kind": "fight_split", "title": f"Kills and deaths by fight type ({incl} matches with demo)", "n": incl,
                 "note": (f"Midboss fight: a death within {fights.MIDBOSS_RADIUS} units of the pit between the first damage to the midboss and {fights.AFTER_S} s after it dies. "
                          f"KOTH fight: a death within {fights.RIFT_RADIUS} units of either rift between the cash-in start and {fights.AFTER_S} s after it ends. "
-                         "Kill = place where the rival died."),
-                "columns": [{"key": "label", "label": "Fight type"}, {"key": "kills", "label": "Kills"},
+                         "Kill = place where the enemy died."),
+                "columns": [{"key": "label", "label": "Fight type", "fmt": "objective"}, {"key": "kills", "label": "Kills"},
                             {"key": "deaths", "label": "Deaths"}, {"key": "total", "label": "Total"}],
                 "rows": rows})
     out.append({"type": "map", "kind": "rest_map", "title": "Kills (●) and deaths (✕) without midboss and KOTH fights", "n": incl,

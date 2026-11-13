@@ -31,9 +31,9 @@ class LaneTests(unittest.TestCase):
 
     def test_lane_styles_defaults_and_names(self):
         s = matches.load_lane_styles()
-        self.assertEqual(s[1], {"nombre": "York", "color": "#F1CC30", "alias": "amarillo"})
-        self.assertEqual(s[3], {"nombre": "Broadway", "color": "#29b1cc", "alias": "azul"})
-        self.assertEqual(s[4], {"nombre": "Greenwich", "color": "#59b247", "alias": "verde"})
+        self.assertEqual(s[1], {"nombre": "York", "color": "#F1CC30", "alias": "yellow"})
+        self.assertEqual(s[3], {"nombre": "Broadway", "color": "#29b1cc", "alias": "blue"})
+        self.assertEqual(s[4], {"nombre": "Greenwich", "color": "#59b247", "alias": "green"})
 
     def test_lane_styles_without_colores_block(self):
         with open(config.OBJECTIVES_PATH, encoding="utf-8") as f:

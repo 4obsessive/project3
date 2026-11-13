@@ -26,7 +26,7 @@ const colorOf = (ser, i) => ser.color || (ser.side ? SIDE_COLORS[ser.side] : nul
 const hatched = ser => ser.side === 'them' || ser.side === 't1';
 
 function svgRoot(W, H, label, fixedWidth = true) {
-  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': label || 'Gráfica' });
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': label || 'Chart' });
   if (fixedWidth) svg.style.maxWidth = W + 'px';
   if (label) svg.append(s('title', {}, label));
   return svg;
@@ -86,20 +86,20 @@ export function bars({ labels, series, unit = '', height = 220, label = '', labe
 /** Histograma de valores en segundos agrupados en bins (bin_s). */
 export function histogram({ series, bin_s = 60, height = 200, label = '' }) {
   const all = series.flatMap(sr => sr.values).filter(v => v != null);
-  if (!all.length) return el('div', { class: 'muted small' }, 'Sin datos');
+  if (!all.length) return el('div', { class: 'muted small' }, 'No data');
   const lo = Math.floor(Math.min(...all) / bin_s), hi = Math.floor(Math.max(...all) / bin_s);
   const labels = [], counts = series.map(() => []);
   for (let b = lo; b <= hi; b++) {
     labels.push(bin_s % 60 === 0 ? `${b * bin_s / 60}′` : fmt.mmss(b * bin_s));
     series.forEach((sr, i) => counts[i].push(sr.values.filter(v => v != null && Math.floor(v / bin_s) === b).length));
   }
-  return bars({ labels, series: series.map((sr, i) => ({ ...sr, values: counts[i] })), height, label: label || `Histograma: ${series.map(sr => sr.name).join(' vs ')}` });
+  return bars({ labels, series: series.map((sr, i) => ({ ...sr, values: counts[i] })), height, label: label || `Histogram: ${series.map(sr => sr.name).join(' vs ')}` });
 }
 
 /** Líneas temporales. series: [{name, points:[[t, v]], color}], invert para rangos (1 arriba). */
 export function lines({ series, height = 160, invert = false, yfmt = v => short(v), xfmt = t => fmt.date(t), label = '' }) {
   const pts = series.flatMap(sr => [...sr.points, ...(sr.band || []).flatMap(b => [[b[0], b[1]], [b[0], b[2]]])]).filter(p => p[1] != null);
-  if (!pts.length) return el('div', { class: 'muted small' }, 'Sin historial todavía');
+  if (!pts.length) return el('div', { class: 'muted small' }, 'No history yet');
   const W = 560, H = height, P = { l: 44, r: 10, t: 10, b: 24 };
   let x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0]));
   let y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]));
@@ -107,7 +107,7 @@ export function lines({ series, height = 160, invert = false, yfmt = v => short(
   if (y0 === y1) { y0 -= 1; y1 += 1; }
   const X = t => P.l + (W - P.l - P.r) * (t - x0) / (x1 - x0);
   const Y = v => { const f = (v - y0) / (y1 - y0); return P.t + (H - P.t - P.b) * (invert ? f : 1 - f); };
-  const svg = svgRoot(W, H, label || `Evolución: ${series.map(sr => sr.name).join(', ')}`);
+  const svg = svgRoot(W, H, label || `Trend: ${series.map(sr => sr.name).join(', ')}`);
   for (const tv of ticks(y0, y1)) {
     svg.append(s('line', { x1: P.l, x2: W - P.r, y1: Y(tv), y2: Y(tv), stroke: gridColor() }));
     svg.append(s('text', { x: P.l - 6, y: Y(tv) + 4, 'text-anchor': 'end' }, yfmt(tv)));
@@ -142,7 +142,7 @@ export function timeline({ rows, lanes = null, label = '' }) {
   const W = 900, rowH = 26, P = { l: 120, r: 10, t: 20 };
   const H = P.t + rows.length * rowH + 10;
   const X = t => P.l + (W - P.l - P.r) * t / maxT;
-  const svg = svgRoot(W, H, label || `Línea de tiempo: ${rows.map(r => r.label).join(', ')}`, false);
+  const svg = svgRoot(W, H, label || `Timeline: ${rows.map(r => r.label).join(', ')}`, false);
   svg.classList.add('timeline');
   for (let m = 0; m <= maxT / 60; m++) {
     const major = m % 5 === 0;
@@ -186,9 +186,9 @@ export function timeline({ rows, lanes = null, label = '' }) {
     }
   });
   const leg = el('div', { class: 'legend' },
-    el('span', {}, hasImg ? 'Cada evento lleva la imagen de su objetivo (◆ Guardian)' : '◆ Guardian · ■ Walker · ▲ Shrine · ★ Titan/Core'),
-    ...(rows.some(r => r.events.some(e => e.side === 'us')) ? [el('span', {}, el('i', { style: { background: SIDE_COLORS.us } }), 'este equipo destruye (borde continuo)'), el('span', { style: { color: SIDE_COLORS.them } }, el('i', { class: 'hollow' }), el('span', { class: 'muted' }, 'pierde (borde discontinuo)'))] : []),
-    ...(rows.some(r => r.events.some(e => e.side === 't0' || e.side === 't1')) ? [el('span', {}, el('i', { style: { background: SIDE_COLORS.t0 } }), 'equipo 0 (relleno)'), el('span', { style: { color: SIDE_COLORS.t1 } }, el('i', { class: 'hollow' }), el('span', { class: 'muted' }, 'equipo 1 (contorno)'))] : []));
+    el('span', {}, hasImg ? 'Each event shows its objective image (◆ Guardian)' : '◆ Guardian · ■ Walker · ▲ Shrine · ★ Titan/Core'),
+    ...(rows.some(r => r.events.some(e => e.side === 'us')) ? [el('span', {}, el('i', { style: { background: SIDE_COLORS.us } }), 'this team destroys (solid border)'), el('span', { style: { color: SIDE_COLORS.them } }, el('i', { class: 'hollow' }), el('span', { class: 'muted' }, 'loses (dashed border)'))] : []),
+    ...(rows.some(r => r.events.some(e => e.side === 't0' || e.side === 't1')) ? [el('span', {}, el('i', { style: { background: SIDE_COLORS.t0 } }), 'team 0 (filled)'), el('span', { style: { color: SIDE_COLORS.t1 } }, el('i', { class: 'hollow' }), el('span', { class: 'muted' }, 'team 1 (outline)'))] : []));
   return el('div', {}, leg, el('div', { class: 'chart-scroll' }, svg));
 }
 

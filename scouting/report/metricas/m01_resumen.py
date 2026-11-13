@@ -6,7 +6,7 @@ from ... import matches as M
 from ... import stats as S
 
 
-@metric("resumen", "Resumen de la muestra", order=10)
+@metric("resumen", "Sample summary", order=10)
 def resumen(ctx):
     rows = []
     for m in ctx.matches:
@@ -16,9 +16,9 @@ def resumen(ctx):
         rows.append({
             "match_id": m.id,
             "fecha": time.strftime("%Y-%m-%d", time.localtime(m.mi.get("start_time") or 0)),
-            "lado": f"{M.TEAM_NAMES[m.our]} (equipo {m.our})",
-            "deteccion": "manual" if m.side_source == "manual" else f"auto ({m.roster_counts[m.our]} de la plantilla)",
-            "resultado": "Victoria" if m.won else "Derrota",
+            "lado": f"{M.TEAM_NAMES[m.our]} (team {m.our})",
+            "deteccion": "manual" if m.side_source == "manual" else f"auto ({m.roster_counts[m.our]} from the roster)",
+            "resultado": "Win" if m.won else "Loss",
             "duracion": m.duration,
             "kills": kills.get(m.our, 0), "muertes": kills.get(m.their, 0),
         })
@@ -31,22 +31,22 @@ def resumen(ctx):
     blocks = [
         ctx.sample_warning(),
         {"type": "text", "tone": "confirmed",
-         "text": f"{ctx.n} partidas analizadas · {wins} victorias ({wins / ctx.n:.0%}) · duración media {dur['mean'] / 60:.1f} min, mediana {dur['median'] / 60:.1f} min."},
+         "text": f"{ctx.n} matches analysed · {wins} wins ({wins / ctx.n:.0%}) · mean length {dur['mean'] / 60:.1f} min, median {dur['median'] / 60:.1f} min."},
     ]
     if ctx.skipped:
         blocks.append({"type": "text", "tone": "warning",
-                       "text": f"{len(ctx.skipped)} partidas excluidas por no poder detectar el lado: " + ", ".join(str(s["match_id"]) for s in ctx.skipped)})
+                       "text": f"{len(ctx.skipped)} matches excluded because the side could not be detected: " + ", ".join(str(s["match_id"]) for s in ctx.skipped)})
     blocks.append({
-        "type": "bars", "title": "Winrate por lado", "unit": "%", "n": ctx.n,
-        "labels": [f"{M.TEAM_NAMES[s]} ({by_side[s][0]} partidas)" for s in (0, 1)],
+        "type": "bars", "title": "Winrate by side", "unit": "%", "n": ctx.n,
+        "labels": [f"{M.TEAM_NAMES[s]} ({by_side[s][0]} matches)" for s in (0, 1)],
         "series": [{"name": "Winrate", "side": "us", "values": [round(100 * by_side[s][1] / by_side[s][0]) if by_side[s][0] else None for s in (0, 1)],
                     "ci": [[round(100 * x) for x in S.wilson(by_side[s][1], by_side[s][0], S.Z90)] if by_side[s][0] else None for s in (0, 1)]}],
     })
     blocks.append({
-        "type": "table", "title": "Partidas", "n": ctx.n,
-        "columns": [{"key": "match_id", "label": "Partida"}, {"key": "fecha", "label": "Fecha"}, {"key": "lado", "label": "Lado"},
-                    {"key": "deteccion", "label": "Detección"}, {"key": "resultado", "label": "Resultado"},
-                    {"key": "duracion", "label": "Duración", "fmt": "mmss"}, {"key": "kills", "label": "Kills"}, {"key": "muertes", "label": "Kills rival"}],
+        "type": "table", "title": "Matches", "n": ctx.n,
+        "columns": [{"key": "match_id", "label": "Match"}, {"key": "fecha", "label": "Date"}, {"key": "lado", "label": "Side"},
+                    {"key": "deteccion", "label": "Detection"}, {"key": "resultado", "label": "Result"},
+                    {"key": "duracion", "label": "Length", "fmt": "mmss"}, {"key": "kills", "label": "Kills", "bar": True}, {"key": "muertes", "label": "Opponent kills", "bar": True}],
         "rows": rows,
     })
     for s in (0, 1):
@@ -56,6 +56,6 @@ def resumen(ctx):
         if n >= 5 and on >= 5:
             a, b = S.wilson(w, n, S.Z80), S.wilson(ow, on, S.Z80)
             if a[0] > b[1]:
-                ctx.finding("pattern", f"Rinden mejor como {M.TEAM_NAMES[s]}: {w}/{n} victorias frente a {ow}/{on} en el otro lado.", w, n,
+                ctx.finding("pattern", f"They do better as {M.TEAM_NAMES[s]}: {w}/{n} wins vs {ow}/{on} on the other side.", w, n,
                             baseline=ow / on)
     return blocks

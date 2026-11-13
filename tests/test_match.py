@@ -131,18 +131,18 @@ class SideAndReport(unittest.TestCase):
         eco = next(s for s in out["sections"] if s["id"] == "economia")
         self.assertNotIn("error", eco)
         titles = [b.get("title", "") for b in eco["blocks"]]
-        self.assertTrue(any("Almas por fuente" in t for t in titles))
-        self.assertTrue(any("Ritmos por minuto" in t for t in titles))
+        self.assertTrue(any("Souls by source" in t for t in titles))
+        self.assertTrue(any("Per-minute rates" in t for t in titles))
         # valores conocidos: troopers (fuente 2) y troopers/min de la primera fase, equipo 1 (nuestro) vs equipo 0
         def team_src(tm, sid):
             return sum(next((g["gold"] for g in p["stats"][-1]["gold_sources"] if g["source"] == sid), 0)
                        for p in self.mi["players"] if p["team"] == tm)
-        bars = next(b for b in eco["blocks"] if b["type"] == "bars" and "Almas por fuente" in b["title"])
+        bars = next(b for b in eco["blocks"] if b["type"] == "bars" and "Souls by source" in b["title"])
         k = bars["labels"].index("Troopers")
         vals = {sr["side"]: sr["values"][k] for sr in bars["series"]}
         self.assertEqual(vals["us"], team_src(1, 2))
         self.assertEqual(vals["them"], team_src(0, 2))
-        tab = next(b for b in eco["blocks"] if b["type"] == "table" and "Ritmos" in b["title"])
+        tab = next(b for b in eco["blocks"] if b["type"] == "table" and "Per-minute rates" in b["title"])
         row = next(r for r in tab["rows"] if r["metrica"] == "Troopers/min")
         e = M.economy(self.mi)
         self.assertEqual(row["us0"], round(e["teams"]["1"]["per_phase"][0]["troopers_kills"], 1))
@@ -156,7 +156,7 @@ class SideAndReport(unittest.TestCase):
         short["match_info"]["duration_s"] = 1000
         out = report.run("Prueba", [short], self.team1)
         eco = next(s for s in out["sections"] if s["id"] == "economia")
-        tab = next(b for b in eco["blocks"] if b["type"] == "table" and "Ritmos" in b["title"])
+        tab = next(b for b in eco["blocks"] if b["type"] == "table" and "Per-minute rates" in b["title"])
         for r in tab["rows"]:
             self.assertIsNone(r["us2"])
             self.assertIsNone(r["them2"])
@@ -173,7 +173,7 @@ class SideAndReport(unittest.TestCase):
         for s in out["sections"]:
             self.assertNotIn("error", s, f"la métrica {s['id']} falló: {s.get('error')}")
             for b in s["blocks"]:
-                self.assertIn(b["type"], {"text", "table", "bars", "histogram", "timeline", "map", "unavailable"})
+                self.assertIn(b["type"], {"text", "table", "bars", "histogram", "timeline", "map", "unavailable", "cards"})
         json.dumps(out)
         # muestra pequeña -> aviso
         resumen = next(s for s in out["sections"] if s["id"] == "resumen")
@@ -185,7 +185,7 @@ class SideAndReport(unittest.TestCase):
     def test_zone_tables_have_maps(self):
         out = report.run("Prueba", [self.data], self.team1)
         mapa = next(s for s in out["sections"] if s["id"] == "mapa")
-        titles = ("Zonas con más muertes", "Zonas con más kills", "Dónde ganan y pierden enfrentamientos")
+        titles = ("Zones with most deaths", "Zones with most kills", "Where they win and lose fights")
         seen = 0
         for t in titles:
             tab = next((b for b in mapa["blocks"] if b["type"] == "table" and b["title"] == t), None)
@@ -243,7 +243,7 @@ class SideAndReport(unittest.TestCase):
         names = {int(k): v["nombre"] for k, v in out["lanes"].items()}
         bars = next(b for b in blocks if b["type"] == "bars")
         self.assertEqual([names[i] for i in bars["lane_ids"]], bars["labels"])
-        tiempos = next(b for b in blocks if b.get("title") == "Tiempos por carril")
+        tiempos = next(b for b in blocks if b.get("title") == "Times by lane")
         self.assertEqual(next(c for c in tiempos["columns"] if c["key"] == "carril")["fmt"], "lane")
         for r in tiempos["rows"]:
             self.assertIn(r["carril_id"], (1, 3, 4))
@@ -325,7 +325,7 @@ class Economy(unittest.TestCase):
     def test_overview_and_names(self):
         ov = M.overview(self.mi)
         self.assertIn("economy", ov)
-        self.assertEqual(ov["economy"]["source_names"][3], "Jungla")
+        self.assertEqual(ov["economy"]["source_names"][3], "Jungle")
 
     def test_unreached_phase_rates_are_none(self):
         import copy

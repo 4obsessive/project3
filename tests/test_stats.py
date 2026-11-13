@@ -55,8 +55,8 @@ class Priors(unittest.TestCase):
                          ["Insuficiente", "Baja", "Baja", "Media", "Media", "Alta"])
 
     def test_evidence(self):
-        self.assertEqual(stats.evidence(2, 3)["evidence"], "indicio")
-        self.assertEqual(stats.evidence(8, 9)["evidence"], "fuerte")
+        self.assertEqual(stats.evidence(2, 3)["evidence"], "hint")
+        self.assertEqual(stats.evidence(8, 9)["evidence"], "strong")
 
 
 def _h(m, w=None, k=10, d=10, a=10, dmg=1000, t=1800, nwm=0.0, objm=0.0):
@@ -200,14 +200,14 @@ class UpdaterWindow(unittest.TestCase):
 class ReportEvidence(unittest.TestCase):
     def test_levels_and_baseline(self):
         ctx = ReportCtx("x", [], {}, [])
-        self.assertEqual(ctx.finding("pattern", "a", 2, 3)["evidence"], "indicio")
-        self.assertEqual(ctx.finding("pattern", "b", 8, 9)["evidence"], "fuerte")
+        self.assertEqual(ctx.finding("pattern", "a", 2, 3)["evidence"], "hint")
+        self.assertEqual(ctx.finding("pattern", "b", 8, 9)["evidence"], "strong")
         # 4/6 con base 1/3 (tres carriles) es moderada; con base 1/2 es solo indicio
-        self.assertEqual(ctx.finding("weakness", "c", 4, 6, baseline=1 / 3)["evidence"], "moderada")
-        self.assertEqual(ctx.finding("weakness", "d", 4, 6)["evidence"], "indicio")
+        self.assertEqual(ctx.finding("weakness", "c", 4, 6, baseline=1 / 3)["evidence"], "moderate")
+        self.assertEqual(ctx.finding("weakness", "d", 4, 6)["evidence"], "hint")
         order = sorted(ctx.findings, key=m99_conclusiones.sort_key)
         self.assertEqual(order[0]["text"], "b")
-        self.assertIn("IC90", m99_conclusiones.evidence_text(order[0]))
+        self.assertIn("CI90", m99_conclusiones.evidence_text(order[0]))
 
     def test_side_comparison_needs_five(self):
         from scouting.report.metricas import m01_resumen

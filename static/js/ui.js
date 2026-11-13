@@ -233,7 +233,7 @@ export function countUp(node, target, format = v => Math.round(v)) {
 export function windowText(win, n = null) {
   if (!win) return '';
   const mode = win.match_mode === 'ranked' ? 'Ranked' : win.match_mode ? 'Ranked + normal' : 'Todas las partidas';
-  const d = t => new Date(t * 1000).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '');
+  const d = t => new Date(t * 1000).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }).replace('.', '');
   const range = win.start && win.end ? `${d(win.start)} – ${d(win.end)}` : '';
   return [mode, range, n != null ? `${fmt.int(n)} partidas` : null].filter(Boolean).join(' · ');
 }

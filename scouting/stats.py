@@ -81,14 +81,14 @@ def percentile_fn(values):
 
 
 def evidence(k, n, baseline=0.5, z=Z90):
-    """Fuerza de un hallazgo k/n frente a una tasa base: fuerte | moderada | indicio."""
+    """Fuerza de un hallazgo k/n frente a una tasa base: strong | moderate | hint."""
     lo, hi = wilson(k, n, z)
     if n >= 8 and lo > baseline:
-        ev = "fuerte"
+        ev = "strong"
     elif n >= 5 and lo > baseline:
-        ev = "moderada"
+        ev = "moderate"
     else:
-        ev = "indicio"
+        ev = "hint"
     return {"lo": lo, "hi": hi, "evidence": ev}
 
 

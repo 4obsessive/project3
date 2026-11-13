@@ -24,7 +24,7 @@ export function el(tag, attrs = {}, ...children) {
 }
 
 export const fmt = {
-  int: v => v == null ? '–' : Math.round(v).toLocaleString('es-ES'),
+  int: v => v == null ? '–' : Math.round(v).toLocaleString('en-US'),
   dec: (v, d = 2) => v == null || !isFinite(v) ? '–' : Number(v).toFixed(d),
   pct: v => v == null || !isFinite(v) ? '–' : Math.round(v * 100) + '%',
   mmss: s => {
@@ -33,16 +33,16 @@ export const fmt = {
     return `${m}:${String(r).padStart(2, '0')}`;
   },
   signed: (v, d = 1) => v == null || !isFinite(v) ? '–' : (v > 0 ? '+' : '') + Number(v).toFixed(d),
-  signed0: v => v == null || !isFinite(v) ? '–' : (v > 0 ? '+' : '') + Math.round(v).toLocaleString('es-ES'),
-  date: t => t ? new Date(t * 1000).toLocaleDateString('es-ES') : '–',
-  datetime: t => t ? new Date(t * 1000).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '–',
+  signed0: v => v == null || !isFinite(v) ? '–' : (v > 0 ? '+' : '') + Math.round(v).toLocaleString('en-US'),
+  date: t => t ? new Date(t * 1000).toLocaleDateString('en-US') : '–',
+  datetime: t => t ? new Date(t * 1000).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }) : '–',
   ago: t => {
-    if (!t) return 'nunca';
+    if (!t) return 'never';
     const s = Date.now() / 1000 - t;
-    if (s < 90) return 'hace un momento';
-    if (s < 3600) return `hace ${Math.round(s / 60)} min`;
-    if (s < 86400 * 2) return `hace ${Math.round(s / 3600)} h`;
-    return `hace ${Math.round(s / 86400)} días`;
+    if (s < 90) return 'just now';
+    if (s < 3600) return `${Math.round(s / 60)} min ago`;
+    if (s < 86400 * 2) return `${Math.round(s / 3600)} h ago`;
+    return `${Math.round(s / 86400)} days ago`;
   },
 };
 
@@ -96,7 +96,7 @@ export function dataTable(columns, rows, opts = {}) {
           if (sortKey === c.key) asc = !asc; else { sortKey = c.key; asc = !isNum; }
           render();
           table.querySelector(`th[data-key="${CSS.escape(String(c.key))}"] button`)?.focus();
-        } }, c.label || el('span', { class: 'sr-only' }, 'columna')));
+        } }, c.label || el('span', { class: 'sr-only' }, 'column')));
         th.dataset.key = c.key;
       } else th.append(c.label || '');
       tr.append(th);
@@ -109,13 +109,13 @@ export function dataTable(columns, rows, opts = {}) {
       if (c) data.sort((a, b) => {
         const x = sortVal(c, a), y = sortVal(c, b);
         if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
-        const r = typeof x === 'string' ? x.localeCompare(y, 'es') : x - y;
+        const r = typeof x === 'string' ? x.localeCompare(y, 'en') : x - y;
         return asc ? r : -r;
       });
     }
     const tbody = el('tbody');
     const limit = opts.limit || 2000;
-    if (!data.length) tbody.append(el('tr', {}, el('td', { class: 'empty-row', colspan: columns.length }, opts.emptyText || 'Sin resultados')));
+    if (!data.length) tbody.append(el('tr', {}, el('td', { class: 'empty-row', colspan: columns.length }, opts.emptyText || 'No results')));
     const animate = opts.animate && !render.done;
     for (const [i, r] of data.slice(0, limit).entries()) {
       const row = el('tr', { class: (opts.onRowClick ? 'clickable' : '') + (animate && i < 20 ? ' enter' : ''), style: animate && i < 20 ? { animationDelay: (i * 12) + 'ms' } : null });
@@ -132,7 +132,7 @@ export function dataTable(columns, rows, opts = {}) {
     table.append(tbody);
     render.done = true;
     wrap.classList.toggle('scroll', !opts.maxHeight && data.length > 25);
-    if (data.length > limit) { more = el('div', { class: 'muted small' }, `Mostrando ${limit} de ${data.length}`); wrap.append(more); }
+    if (data.length > limit) { more = el('div', { class: 'muted small' }, `Showing ${limit} of ${data.length}`); wrap.append(more); }
   }
   render();
   wrap.update = newRows => { rows = newRows; render(); };
@@ -160,12 +160,12 @@ export function toast(msg, isError = false) {
   toastTimer = setTimeout(() => (t.hidden = true), isError ? 7000 : 3500);
 }
 
-export function spinner(text = 'Cargando…') { return el('div', { class: 'empty', role: 'status' }, el('span', { class: 'spinner', 'aria-hidden': 'true' }), ' ', text); }
+export function spinner(text = 'Loading…') { return el('div', { class: 'empty', role: 'status' }, el('span', { class: 'spinner', 'aria-hidden': 'true' }), ' ', text); }
 
-/** Bloque de error común con botón «Reintentar». */
-export function errorBox(message, onRetry, title = 'No se pudo cargar') {
+/** Bloque de error común con botón «Retry». */
+export function errorBox(message, onRetry, title = 'Could not load') {
   return el('div', { class: 'panel error-box', role: 'alert' }, el('h3', {}, title), el('p', {}, message),
-    onRetry ? el('button', { type: 'button', onclick: onRetry }, 'Reintentar') : null);
+    onRetry ? el('button', { type: 'button', onclick: onRetry }, 'Retry') : null);
 }
 
 /** Lee un token de color de :root (las gráficas y el mapa comparten la paleta del CSS). */
@@ -185,7 +185,7 @@ export const store = {
 };
 
 export function teamTag(team, names) {
-  return el('span', { class: `tag t${team}` }, names ? names[team] : `Equipo ${team}`);
+  return el('span', { class: `tag t${team}` }, names ? names[team] : `Team ${team}`);
 }
 
 /**
