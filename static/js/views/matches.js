@@ -52,6 +52,7 @@ export async function render(root, ctx) {
 }
 
 async function showMatch(root, id, ctx) {
+  clearTimeout(demoTimer); demoTimer = null;
   root.innerHTML = ''; root.append(spinner('Cargando partida…'));
   let m;
   try { m = await api.get(`/api/matches/${id}`); } catch (e) { root.innerHTML = ''; root.append(errorBox(e.message, () => showMatch(root, id, ctx), 'No se pudo cargar la partida')); return; }
@@ -69,6 +70,7 @@ async function showMatch(root, id, ctx) {
     'Resumen': () => resumen(body, m, tname, ctx),
     'Objetivos': () => objetivos(body, m, tname),
     'Midboss': () => midboss(body, m, tname),
+    'Economía': () => economia(body, m, tname),
     'Minimapa': () => minimapa(body, m, tname),
     'Explorador': () => renderExplorer(body, m.match_id),
   };
@@ -96,9 +98,21 @@ async function showMatch(root, id, ctx) {
   });
   body.setAttribute('aria-labelledby', 'tab-' + current.toLowerCase());
   views[current]();
+  scheduleDemoRefresh(root, id, ctx, m);
 }
 
 let heroById = new Map();
+let demoTimer = null;
+/** Mientras el demo está pendiente, recarga la vista cada 20 s; se detiene al salir de la partida. */
+function scheduleDemoRefresh(root, id, ctx, m) {
+  clearTimeout(demoTimer); demoTimer = null;
+  if (m.demo?.state !== 'pending') return;
+  demoTimer = setTimeout(() => {
+    demoTimer = null;
+    if (!root.isConnected || !location.hash.startsWith(`#partidas/${id}`)) return;
+    showMatch(root, id, ctx);
+  }, 20000);
+}
 /** Retrato del héroe de un jugador de la partida (con los datos de /api/heroes si hay). */
 const portrait = (p, opts) => heroPortrait(heroById.get(p.hero_id) || { id: p.hero_id, name: p.hero }, opts);
 const pname = p => p.name || `Cuenta ${p.account_id}`;
@@ -283,24 +297,109 @@ function laneTracks(m, tname) {
     axis);
 }
 
+/** Estado del demo cuando no hay datos: cargando / sin demo / no disponible (con su razón). */
+function demoStatus(demo) {
+  const st = demo?.state;
+  if (st === 'pending') return el('div', { class: 'unavailable block', role: 'status' }, spinner('Cargando datos del demo…'));
+  if (st === 'nodemo') return el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), 'esta partida no tiene demo.');
+  return el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), demo?.reason || 'no hay datos del demo para esta partida.');
+}
+
+const demoDone = m => m.demo?.state === 'done';
+const teamTag = (t, tname) => t == null ? el('span', { class: 'muted' }, '–') : el('span', { class: `tag t${t}` }, tname(t));
+const comebackTag = (team, tname) => team == null ? null : el('span', { class: `tag comeback t${team}`, title: 'Regla del 10 %: net worth < 0,9 × el del rival' }, `en remontada: ${tname(team)}`);
+
 function kothCard(m, tname) {
+  const d = demoDone(m) ? m.demo : null;
+  const cb = (m.comeback && m.comeback.koth) || [];
+  const rows = d ? (d.koth || []) : [];
   return el('div', { class: 'koth-card' },
     el('div', { class: 'koth-head' }, objectiveImg('KOTH', null, { size: 'lg' }), el('h3', {}, 'KOTH (Unstable Rift)')),
-    el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), 'la API no trae los cash-in del KOTH.'),
+    d ? (rows.length ? el('ul', { class: 'koth-list cashins' }, rows.map((k, i) => el('li', {},
+      el('b', { class: 'ci-n' }, `#${k.n}`),
+      el('span', {}, `inicio ${fmt.mmss(k.start_t)}`),
+      k.completed_by == null ? el('span', { class: 'muted' }, 'no completado')
+        : el('span', {}, 'completado ', fmt.mmss(k.completed_t), ' por ', teamTag(k.completed_by, tname)),
+      comebackTag(cb[i], tname)))) : el('p', { class: 'muted small' }, 'No hubo cash-in del KOTH.')) : demoStatus(m.demo),
     el('div', { class: 'grid2' }, [0, 1].map(t => el('div', {},
       el('h4', {}, 'Comeback Gold Koth · ', el('span', { class: `tag t${t}` }, tname(t))),
       el('ul', { class: 'koth-list' }, m.players.filter(p => p.team === t).map(p =>
         el('li', {}, portrait(p, { size: 'sm', shape: 'round' }), el('span', {}, p.hero), el('b', {}, fmt.int(p.comeback_gold_koth || 0)))))))));
 }
 
+/** 3 iconos de Rejuvenator, cada uno del color del equipo que lo coge (según rejuv del demo). */
+function rejuvIcons(rejuv, tname) {
+  const r0 = (rejuv && rejuv[0]) || 0, r1 = (rejuv && rejuv[1]) || 0;
+  const owners = [...Array(r0).fill(0), ...Array(r1).fill(1)];
+  const txt = owners.length ? [r0 ? `${r0} rejuvenators para ${tname(0)}` : null, r1 ? `${r1} rejuvenators para ${tname(1)}` : null].filter(Boolean).join(', ') : 'sin rejuvenators';
+  return el('span', { class: 'rejuvs', role: 'img', 'aria-label': txt, title: txt },
+    owners.map(t => el('span', { class: `rj t${t}`, 'aria-hidden': 'true' }, objectiveImg('Rejuvenator', null, { size: 'sm' }))),
+    el('span', { class: 'rj-txt' }, txt));
+}
+
+function dmgBar(damage, tname) {
+  const d0 = (damage && damage[0]) || 0, d1 = (damage && damage[1]) || 0, tot = d0 + d1;
+  return el('div', { class: 'dmg-duo' },
+    el('div', { class: 'dmg-bar', 'aria-hidden': 'true' },
+      el('i', { class: 't0', style: { flex: tot ? d0 : 1 } }), el('i', { class: 't1', style: { flex: tot ? d1 : 1 } })),
+    el('div', { class: 'small' }, `Daño: ${tname(0)} ${fmt.int(d0)} · ${tname(1)} ${fmt.int(d1)}`));
+}
+
 function midboss(root, m, tname) {
-  root.append(el('div', { class: 'koth-head' }, objectiveImg('Midboss', null, { size: 'lg' }), el('h3', {}, 'Midboss')),
-    el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), 'cristales, quién lo inicia e intentos fallidos (la API no los registra).'),
-    m.midboss.length ? dataTable([
-      { key: 'n', label: '#' }, { key: 't', label: 'Minuto', fmt: 'mmss' },
-      { key: 'team_killed', label: 'Lo mata', render: r => el('span', { class: `tag t${r.team_killed}` }, tname(r.team_killed)) },
-      { key: 'team_claimed', label: 'Lo reclama', render: r => el('span', { class: `tag t${r.team_claimed}` }, tname(r.team_claimed)) },
-    ], m.midboss, { sortKey: 't', asc: true }) : el('p', { class: 'muted' }, 'No hubo Midboss.'));
+  root.append(el('div', { class: 'koth-head' }, objectiveImg('Midboss', null, { size: 'lg' }), el('h3', {}, 'Midboss')));
+  if (!demoDone(m)) {
+    root.append(demoStatus(m.demo),
+      m.midboss.length ? dataTable([
+        { key: 'n', label: '#' }, { key: 't', label: 'Minuto', fmt: 'mmss' },
+        { key: 'team_killed', label: 'Lo mata', render: r => el('span', { class: `tag t${r.team_killed}` }, tname(r.team_killed)) },
+        { key: 'team_claimed', label: 'Lo reclama', render: r => el('span', { class: `tag t${r.team_claimed}` }, tname(r.team_claimed)) },
+      ], m.midboss, { sortKey: 't', asc: true }) : el('p', { class: 'muted' }, 'No hubo Midboss.'));
+    return;
+  }
+  const evs = m.demo.midboss || [], cb = (m.comeback && m.comeback.midboss) || [];
+  if (!evs.length) { root.append(el('p', { class: 'muted' }, 'No hubo Midboss.')); return; }
+  root.append(el('div', { class: 'mb-list' }, evs.map((e, i) => el('div', { class: 'mb-card' },
+    el('div', { class: 'mb-head' }, el('b', {}, `Midboss #${e.n}`), el('span', {}, fmt.mmss(e.t)),
+      el('span', {}, 'lo mata ', teamTag(e.killer, tname)), comebackTag(cb[i], tname)),
+    rejuvIcons(e.rejuv, tname),
+    dmgBar(e.damage, tname),
+    e.initiator != null ? el('div', { class: 'small' }, 'Iniciado por ', teamTag(e.initiator, tname)) : null,
+    e.stolen != null ? el('div', { class: 'small' }, 'Robado: ', e.stolen ? 'sí' : 'no') : null))));
+}
+
+const ECO_COLS = [['troopers_kills', 'Troopers/min'], ['jungla_kills', 'Jungla/min'], ['net_worth', 'Net worth/min']];
+
+function economia(root, m, tname) {
+  const eco = m.economy;
+  if (!eco || !eco.players || !eco.players.length) { root.append(el('p', { class: 'muted' }, 'No disponible: la partida no trae datos de economía.')); return; }
+  const names = eco.source_names || {};
+  const sids = Object.keys(names).filter(id => eco.players.some(p => (p.sources || {})[id]));
+  const byslot = new Map(m.players.map(p => [p.slot, p]));
+  root.append(el('p', { class: 'muted small' }, 'Almas obtenidas por fuente (total de la partida) y ritmos por minuto. «–» = sin dato.'));
+  for (const t of [0, 1]) {
+    const rows = eco.players.filter(p => p.team === t).map(p => {
+      const r = { pl: byslot.get(p.slot), slot: p.slot, hero: byslot.get(p.slot)?.hero || `#${p.slot}` };
+      for (const id of sids) r['s' + id] = (p.sources || {})[id] ?? 0;
+      for (const [k] of ECO_COLS) r['r_' + k] = (p.per_min || {})[k] ?? null;
+      return r;
+    });
+    const cols = [
+      { key: 'hero', label: 'Héroe', render: r => r.pl ? el('span', { class: 'hero-cell' }, portrait(r.pl, { size: 'sm', shape: 'round' }), r.pl.hero) : r.hero },
+      ...sids.map(id => ({ key: 's' + id, label: names[id], fmt: 'int' })),
+      ...ECO_COLS.map(([k, l]) => ({ key: 'r_' + k, label: l, fmt: '1' })),
+    ];
+    root.append(el('h4', {}, tname(t)), dataTable(cols, rows, { sortKey: 'r_net_worth' }));
+  }
+  const labels = ['0–10 min', '10–20 min', '20 min–fin'];
+  const trows = [];
+  for (const [k, l] of ECO_COLS) for (const t of [0, 1]) {
+    const ph = (eco.teams[String(t)] || {}).per_phase || [];
+    const r = { metric: `${l} · ${tname(t)}` };
+    labels.forEach((_, i) => { r['p' + i] = ph[i] ? (ph[i][k] ?? null) : null; });
+    trows.push(r);
+  }
+  root.append(el('h4', {}, 'Ritmos por equipo y fase'),
+    dataTable([{ key: 'metric', label: 'Métrica' }, ...labels.map((l, i) => ({ key: 'p' + i, label: l, fmt: '1' }))], trows, {}));
 }
 
 async function minimapa(root, m, tname) {

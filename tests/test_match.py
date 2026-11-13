@@ -300,6 +300,25 @@ class Economy(unittest.TestCase):
         self.assertIn("economy", ov)
         self.assertEqual(ov["economy"]["source_names"][3], "Jungla")
 
+    def test_unreached_phase_rates_are_none(self):
+        import copy
+        mi = copy.deepcopy(self.mi)
+        mi["duration_s"] = 1000
+        eco = M.economy(mi)
+        self.assertEqual(eco["phases"][2], [1200, 1000])
+        for t in eco["teams"].values():
+            self.assertTrue(all(v is None for v in t["per_phase"][2].values()))
+            self.assertTrue(all(v is not None for v in t["per_phase"][1].values()))
+
+    def test_comeback_flags(self):
+        self.assertIsNone(M.comeback_flags(self.mi, {"state": "pending"}))
+        demo = {"state": "done", "midboss": [{"t": 1198}, {"t": 1500}], "koth": [{"start_t": 740}]}
+        fl = M.comeback_flags(self.mi, demo)
+        self.assertEqual(len(fl["midboss"]), 2)
+        self.assertEqual(fl["midboss"][0], M.comeback_team_at(self.mi, 1198))
+        self.assertEqual(fl["koth"], [M.comeback_team_at(self.mi, 740)])
+        self.assertTrue(all(v in (None, 0, 1) for v in fl["midboss"] + fl["koth"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -335,6 +335,7 @@ class App:
             p["player_id"], p["name"] = (r["id"], r["n"]) if r else (None, None)
             names[p["slot"]] = p["name"]
         out["demo"] = demo.summary(con, int(mid))
+        out["comeback"] = matches.comeback_flags(d["match_info"], out["demo"])
         return out
 
     def match_positions(self, req, mid):

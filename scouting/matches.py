@@ -354,7 +354,8 @@ def _rates(players, t0, t1):
         a, b = _cumulative(p, t0), _cumulative(p, t1)
         for k in b:
             tot[k] = tot.get(k, 0) + (b[k] - a[k])
-    return {k: round(max(v, 0) / mins, 2) if mins > 0 else 0 for k, v in tot.items()}
+    # fase sin duración en esta partida (más allá del final): dato ausente, no 0
+    return {k: round(max(v, 0) / mins, 2) if mins > 0 else None for k, v in tot.items()}
 
 
 def economy(mi):
@@ -391,6 +392,14 @@ def comeback_team_at(mi, t):
         if nw[tm] < COMEBACK_RATIO * nw[1 - tm]:
             return tm
     return None
+
+
+def comeback_flags(mi, demo):
+    """Equipo en remontada (o None) en cada midboss y cada cash-in del KOTH del demo; None si el demo no está listo."""
+    if not demo or demo.get("state") != "done":
+        return None
+    return {"midboss": [comeback_team_at(mi, e["t"]) if e.get("t") is not None else None for e in demo.get("midboss") or []],
+            "koth": [comeback_team_at(mi, e["start_t"]) if e.get("start_t") is not None else None for e in demo.get("koth") or []]}
 
 
 def custom_stat_id(mi, name):

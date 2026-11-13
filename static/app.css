@@ -498,3 +498,17 @@ details.block > summary { cursor: pointer; color: var(--muted); margin-bottom: 8
 .hero-mosaic { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); opacity: .14; overflow: hidden; pointer-events: none; z-index: 0; }
 .hero-mosaic .portrait, .hero-mosaic .avatar { width: 100%; height: 100%; border-radius: 0; object-fit: cover; object-position: top; }
 .hero > .hero-art { z-index: 0; }
+
+/* partida: midboss, KOTH del demo, economía */
+.mb-list { display: grid; gap: 10px; }
+.mb-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; background: var(--panel2); }
+.mb-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.rejuvs { display: inline-flex; align-items: center; gap: 6px; }
+.rejuvs .rj { display: inline-flex; border-radius: 50%; padding: 2px; border: 2px solid var(--line); }
+.rejuvs .rj.t0 { border-color: var(--t0); } .rejuvs .rj.t1 { border-color: var(--t1); }
+.rj-txt { font-size: var(--fs-xs); color: var(--muted); }
+.dmg-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--line); }
+.dmg-bar i.t0 { background: var(--t0); } .dmg-bar i.t1 { background: var(--t1); }
+.koth-list.cashins li { flex-wrap: wrap; gap: 10px; }
+.koth-list.cashins .ci-n { margin-left: 0; }
+.tag.comeback { font-style: italic; }
