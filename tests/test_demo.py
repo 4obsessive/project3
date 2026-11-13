@@ -76,6 +76,42 @@ class Summarize(unittest.TestCase):
         self.assertIsNone(s["koth"][0]["completed_by"])
         self.assertIsNone(s["koth"][0]["completed_t"])
 
+    def test_midboss_t_first(self):
+        rules = self.results["rules"]
+        a, b = self.s["midboss"]
+        self.assertEqual(a["t_first"], round(demo.game_seconds_from_tick(77467, rules)))
+        self.assertEqual(b["t_first"], round(demo.game_seconds_from_tick(106044, rules)))
+
+    def test_midboss_t_first_none_for_rejuv_only(self):
+        rules = [{"tick": 0, "koth_team": 0, "koth_scoring": 0.0, "koth_start": 0.0,
+                  "koth_give_up": 0.0, "paused_ticks": 0, "game_start": 0.0}]
+        s = demo.summarize({"rules": rules, "midboss": [],
+                            "rejuv": [{"tick": 6400, "killing_team": 2, "user_team": 2}]})
+        self.assertIsNone(s["midboss"][0]["t_first"])
+
+    def test_koth_end_t_completed(self):
+        for x in self.s["koth"]:
+            self.assertEqual(x["end_t"], x["completed_t"])
+
+    def test_koth_end_t_abandoned(self):
+        inf = 3.4028235e38
+        base = {"koth_team": -1, "koth_scoring": 0.0, "paused_ticks": 0, "game_start": 0.0}
+        rules = [
+            dict(base, tick=0, koth_start=0.0, koth_give_up=0.0),
+            dict(base, tick=100, koth_start=900.0, koth_give_up=inf),
+            dict(base, tick=110, koth_start=900.0, koth_give_up=960.0),
+            dict(base, tick=6400, koth_start=0.0, koth_give_up=0.0),
+        ]
+        s = demo.summarize({"rejuv": [], "rules": rules, "midboss": []})
+        self.assertEqual(s["koth"][0]["end_t"], 100)
+        # Sin fila de cierre (koth_start no vuelve a 0) el fin no se puede determinar.
+        s = demo.summarize({"rejuv": [], "rules": rules[:3], "midboss": []})
+        self.assertIsNone(s["koth"][0]["end_t"])
+
+    def test_summary_version_3(self):
+        self.assertEqual(demo.SUMMARY_VERSION, 3)
+        self.assertEqual(self.s["version"], 3)
+
     def test_midboss_no_damage(self):
         rejuv = [{"tick": 6400 + i * 6, "killing_team": 2, "user_team": 2} for i in range(3)]
         s = demo.summarize({"rejuv": rejuv, "rules": self.results["rules"], "midboss": []})

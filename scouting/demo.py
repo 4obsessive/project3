@@ -22,7 +22,8 @@ TICK_RATE = 64
 # El demo numera los equipos 2 y 3; la API de partidas usa 0 y 1.
 TEAM_TO_API = {2: 0, 3: 1}
 # 2: KOTH sin restar dos veces las pausas; Midboss sin daño capturado -> damage None.
-SUMMARY_VERSION = 2
+# 3: Midboss con t_first (primer daño) y KOTH con end_t (fin del cash-in).
+SUMMARY_VERSION = 3
 # Ventana tras el último daño al Midboss en la que un rejuvenator cuenta como suyo.
 KILL_WINDOW_S = 30
 # Rejuvenators del mismo equipo separados menos de esto pertenecen al mismo Midboss.
@@ -102,8 +103,10 @@ def _contar_rejuv(rows):
 def _midboss(results, rules):
     entidades = {}
     for r in results.get("midboss") or []:
-        e = entidades.setdefault(r["victim"], {"filas": [], "t1": 0})
+        e = entidades.setdefault(r["victim"], {"filas": [], "t1": 0, "t0": None})
         e["filas"].append(r)
+        if r.get("t0") is not None:
+            e["t0"] = r["t0"] if e["t0"] is None else min(e["t0"], r["t0"])
         e["t1"] = max(e["t1"], r["t1"])
     lista = []
     for e in entidades.values():
@@ -113,7 +116,7 @@ def _midboss(results, rules):
             dmg[str(_api(f["team"]))] += f["dmg"]
         # Inicia el equipo que más daño hizo; empate (o 0 en ambos) -> None, sin inventar.
         inicia = None if dmg["0"] == dmg["1"] else (0 if dmg["0"] > dmg["1"] else 1)
-        lista.append({"t_tick": e["t1"], "damage": dmg,
+        lista.append({"t_tick": e["t1"], "t0": e["t0"], "damage": dmg,
                       "initiator": inicia,
                       "killer": None, "rejuv_rows": []})
     lista.sort(key=lambda x: x["t_tick"])
@@ -128,7 +131,7 @@ def _midboss(results, rules):
                 destino = e
         if destino is None:
             # Sin daño capturado: el daño es un dato ausente (None), no 0.
-            sueltos.append({"t_tick": primero, "damage": None, "initiator": None,
+            sueltos.append({"t_tick": primero, "t0": None, "damage": None, "initiator": None,
                             "killer": _api(c["team"]), "rejuv_rows": c["rows"]})
         else:
             destino["rejuv_rows"].extend(c["rows"])
@@ -144,6 +147,8 @@ def _midboss(results, rules):
         salida.append({
             "n": n,
             "t": round(game_seconds_from_tick(e["t_tick"], rules)),
+            # Primer daño al Midboss; None si la entrada solo viene de rejuvenators (sin daño capturado).
+            "t_first": round(game_seconds_from_tick(e["t0"], rules)) if e["t0"] is not None else None,
             "damage": e["damage"],
             "initiator": ini,
             "killer": kil,
@@ -154,6 +159,11 @@ def _midboss(results, rules):
 
 
 def _koth(rules):
+    """Cash-ins del KOTH. `end_t` (s de partida): si se completó, `completed_t`; si no, el cierre del
+    cash-in = tick de la primera fila posterior al inicio (antes del siguiente cash-in) donde koth_start
+    vuelve a 0 sin equipo anotador. Es el único marcador observado: koth_give_up es solo un plazo
+    (inicio + 60 s) y el cash-in puede cerrarse antes o después. Se convierte con game_seconds_from_tick.
+    Si no hay fila de cierre, None (no se inventa)."""
     # Un cash-in = cada koth_start > 0 distinto con koth_give_up finito; se guarda la primera fila en que aparece.
     inicios = []
     vistos = set()
@@ -174,12 +184,25 @@ def _koth(rules):
             if r["koth_team"] in TEAM_TO_API and r["koth_scoring"] >= ini["koth_start"]:
                 hecho = r
                 break
+        cierre = None
+        if hecho is None:
+            for r in rules:
+                if r["tick"] <= ini["tick"]:
+                    continue
+                if limite is not None and r["tick"] >= limite:
+                    break
+                if r["koth_start"] == 0:
+                    cierre = r
+                    break
+        completed_t = (round(game_seconds_from_curtime(hecho["koth_scoring"], hecho["tick"], rules))
+                       if hecho else None)
         salida.append({
             "n": n,
             "start_t": round(game_seconds_from_curtime(ini["koth_start"], ini["tick"], rules)),
             "completed_by": _api(hecho["koth_team"]) if hecho else None,
-            "completed_t": round(game_seconds_from_curtime(hecho["koth_scoring"], hecho["tick"], rules))
-            if hecho else None,
+            "completed_t": completed_t,
+            "end_t": completed_t if hecho else (
+                round(game_seconds_from_tick(cierre["tick"], rules)) if cierre else None),
         })
     return salida
 
