@@ -250,19 +250,39 @@ class PlayerStats(unittest.TestCase):
             self.assertEqual(r["lane"], self.lp["players"][str(p["player_slot"])]["lane"])
             self.assertEqual(r["ganks_made"], self.lp["players"][str(p["player_slot"])]["ganks_made"])
 
-    def test_cells_sum_to_positioned_events(self):
-        ds = matches.deaths(self.mi)
+    def test_direct_metadata_match_109084310(self):
+        with open(os.path.join(ROOT, "match_109084310.json"), encoding="utf-8") as f:
+            mi = json.load(f)["match_info"]
+        res = {r["slot"]: r for r in playerstats.player_stats(mi, lanephase.lane_phase(mi))}
+        self.assertEqual(len(res), len(mi["players"]))
+        for p in mi["players"]:
+            r = res[p["player_slot"]]
+            for k in ("kills", "deaths", "assists", "last_hits", "net_worth"):
+                self.assertEqual(r[k], p[k], k)
+        p10 = next(p for p in mi["players"] if p["player_slot"] == 10)
+        self.assertEqual(res[10]["net_worth"], p10["net_worth"])
+        json.dumps(list(res.values()))
+
+    def test_cells_sum_to_events_with_position(self):
+        from scouting.report import cell_of
         cal = load_calibration()
+        ds = matches.deaths(self.mi)
+
+        def inside(d, team):
+            x, y = (-d["x"], -d["y"]) if team == 1 else (d["x"], d["y"])
+            return cell_of(x, y, cal) is not None
+        total = 0
         for r in self.res:
-            s = r["slot"]
-            ek = [d for d in ds if d["killer_slot"] == s and d["killer_team"] != d["victim_team"]
-                  and d["kx"] is not None and d["ky"] is not None]
-            ed = [d for d in ds if d["victim_slot"] == s and d["x"] is not None and d["y"] is not None]
-            self.assertLessEqual(sum(c[2] for c in r["kill_cells"]), len(ek))
-            self.assertLessEqual(sum(c[2] for c in r["death_cells"]), len(ed))
-            self.assertGreater(sum(c[2] for c in r["death_cells"]), 0) if ed else None
-            self.assertEqual(sum(c[2] for c in r["death_cells"]) + _off(ed, r["team"], cal), len(ed))
-            self.assertEqual(sum(c[2] for c in r["kill_cells"]) + _off(ek, r["team"], cal, True), len(ek))
+            s, tm = r["slot"], r["team"]
+            ek = [d for d in ds if d["killer_slot"] == s and d["killer_team"] != d["victim_team"] and d["x"] is not None]
+            ed = [d for d in ds if d["victim_slot"] == s and d["x"] is not None]
+            self.assertEqual(sum(c[2] for c in r["kill_cells"]), sum(1 for d in ek if inside(d, tm)))
+            self.assertEqual(sum(c[2] for c in r["death_cells"]), sum(1 for d in ed if inside(d, tm)))
+            total += sum(c[2] for c in r["death_cells"])
+        self.assertGreater(total, 0)
+        # todas las posiciones de la partida caen en la cuadrícula: la suma es exactamente las kills con posición
+        self.assertEqual(sum(sum(c[2] for c in r["kill_cells"]) for r in self.res),
+                         sum(1 for d in ds if d["killer_slot"] is not None and d["killer_team"] != d["victim_team"] and d["x"] is not None))
 
     def test_economy_and_stats(self):
         eco = {e["slot"]: e for e in matches.economy(self.mi)["players"]}
@@ -272,7 +292,7 @@ class PlayerStats(unittest.TestCase):
             self.assertEqual(r["troopers_per_min"], eco[s]["per_min"]["troopers_kills"])
             self.assertEqual(r["jungla_per_min"], eco[s]["per_min"]["jungla_kills"])
             self.assertEqual(r["sources"], eco[s]["sources"])
-            self.assertEqual(r["nw_at_600"], matches.stat_at(p, "net_worth", 600))
+            self.assertEqual(r["nw_at_600"], round(matches.stat_at(p, "net_worth", 600)))
             self.assertEqual(r["player_damage"], p["stats"][-1]["player_damage"])
             self.assertEqual(r["damage_taken"], p["stats"][-1]["player_damage_taken"])
             self.assertEqual(r["kda"], round((p["kills"] + p["assists"]) / max(p["deaths"], 1), 2))
@@ -282,24 +302,11 @@ class PlayerStats(unittest.TestCase):
         mi["players"][0]["stats"] = []
         slot = mi["players"][0]["player_slot"]
         r = {x["slot"]: x for x in playerstats.player_stats(mi, lanephase.lane_phase(mi))}[slot]
-        for k in ("nw_at_600", "player_damage", "damage_taken"):
+        for k in ("nw_at_600", "player_damage", "damage_taken", "sources"):
             self.assertIsNone(r[k], k)
 
     def test_json_serializable(self):
         json.dumps(self.res)
-
-
-def _off(events, team, cal, killer=False):
-    """Eventos cuya posición cae fuera de la cuadrícula (sin celda)."""
-    from scouting.report import cell_of
-    n = 0
-    for d in events:
-        x, y = (d["kx"], d["ky"]) if killer else (d["x"], d["y"])
-        if team == 1:
-            x, y = -x, -y
-        if cell_of(x, y, cal) is None:
-            n += 1
-    return n
 
 
 if __name__ == "__main__":

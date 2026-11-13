@@ -27,7 +27,7 @@ def _final(p, field, dur):
 def player_stats(mi, lane_phase_result, cal=None):
     """Lista por jugador (orden equipo, slot). Dato ausente -> None. Los campos de fase de líneas
     (lane, dmg_done, dmg_taken, ganks_made, ganks_suffered, deaths, kills) se copian de `lane_phase_result`
-    con prefijo `lane_` salvo `lane`; kill_cells usa la posición del asesino y death_cells la de la víctima."""
+    con prefijo `lane_` salvo `lane`; kill_cells y death_cells usan la posición de la muerte de la víctima (como el informe: kill = lugar donde murió el rival)."""
     cal = cal or load_calibration()
     dur = mi.get("duration_s") or 0
     eco = {e["slot"]: e for e in matches.economy(mi)["players"]}
@@ -47,11 +47,11 @@ def player_stats(mi, lane_phase_result, cal=None):
             "kills": k, "deaths": d, "assists": a, "kda": kda,
             "last_hits": p.get("last_hits"), "denies": p.get("denies"),
             "net_worth": p.get("net_worth"), "nw_per_min": pm.get("net_worth"),
-            "nw_at_600": matches.stat_at(p, "net_worth", 600),
+            "nw_at_600": _final(p, "net_worth", 600),
             "troopers_per_min": pm.get("troopers_kills"), "jungla_per_min": pm.get("jungla_kills"),
-            "sources": e.get("sources") or {},
+            "sources": e.get("sources") if p.get("stats") else None,
             "player_damage": _final(p, "player_damage", dur), "damage_taken": _final(p, "player_damage_taken", dur),
-            "kill_cells": _cells([(x["kx"], x["ky"]) for x in ds
+            "kill_cells": _cells([(x["x"], x["y"]) for x in ds
                                   if x["killer_slot"] == s and x["killer_team"] != x["victim_team"]], tm, cal),
             "death_cells": _cells([(x["x"], x["y"]) for x in ds if x["victim_slot"] == s], tm, cal),
             "lane_dmg_done": l.get("dmg_done"), "lane_dmg_taken": l.get("dmg_taken"),
