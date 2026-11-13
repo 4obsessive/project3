@@ -19,17 +19,15 @@ def conclusiones(ctx):
         blocks.append({"type": "text", "tone": "warning",
                        "text": f"Con {ctx.n} partidas las conclusiones son orientativas. Para hablar de patrones conviene llegar a {SMALL_SAMPLE} o más."})
     blocks.append({"type": "text", "tone": "info",
-                   "text": "Solo se listan patrones que se repiten (normalmente en la mitad de las partidas o más). "
-                           "«Confirmado» = sale directamente de los datos; «interpretación» = lectura táctica de esos datos."})
+                   "text": "Solo se listan patrones que se repiten (normalmente en la mitad de las partidas o más)."})
     for kind, title in GROUPS:
         items = [f for f in ctx.findings if f["kind"] == kind]
         if not items:
-            rows = [{"texto": "Nada concluyente en esta muestra.", "evidencia": "", "tipo": ""}]
+            rows = [{"texto": "Nada concluyente en esta muestra.", "evidencia": ""}]
         else:
             items.sort(key=lambda f: -(f["support"] / f["total"]) if f.get("total") else 0)
-            rows = [{"texto": f["text"], "evidencia": f"{f['support']}/{f['total']}" if f.get("total") else "",
-                     "tipo": "confirmado" if f["confirmed"] else "interpretación"} for f in items]
+            rows = [{"texto": f["text"], "evidencia": f"{f['support']}/{f['total']}" if f.get("total") else ""} for f in items]
         blocks.append({"type": "table", "title": title, "n": ctx.n,
-                       "columns": [{"key": "texto", "label": ""}, {"key": "evidencia", "label": "Partidas"}, {"key": "tipo", "label": "Tipo"}],
+                       "columns": [{"key": "texto", "label": ""}, {"key": "evidencia", "label": "Partidas"}],
                        "rows": rows})
     return blocks

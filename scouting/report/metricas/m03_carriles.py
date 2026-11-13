@@ -96,14 +96,14 @@ def carriles(ctx):
         lane, cnt = (first_lost.most_common(1) or [(None, 0)])[0]
         if lane and cnt / n >= 0.5:
             ctx.finding("weakness", f"Pierden primero el Guardian del {ln(lane)} en {cnt} de {n} partidas.", cnt, n)
-            ctx.finding("improve", f"Reforzar el {ln(lane)} en la fase de carriles (es el primero que cae en {cnt}/{n}).", cnt, n, confirmed=False)
+            ctx.finding("improve", f"Reforzar el {ln(lane)} en la fase de carriles (es el primero que cae en {cnt}/{n}).", cnt, n)
         lane, cnt = (first_taken.most_common(1) or [(None, 0)])[0]
         if lane and cnt / n >= 0.5:
             ctx.finding("pattern", f"Presionan primero el {ln(lane)}: es el primer Guardian rival que cae en {cnt} de {n} partidas.", cnt, n)
         for l in lanes:
             never = n - len(times[("taken", "Guardian", l)])
             if never / n >= 0.6 and len(lanes) > 1:
-                ctx.finding("opportunity", f"Rara vez destruyen el Guardian rival del {ln(l)} (no cae en {never} de {n} partidas): posible carril descuidado en ataque.", never, n, confirmed=False)
+                ctx.finding("opportunity", f"Rara vez destruyen el Guardian rival del {ln(l)} (no cae en {never} de {n} partidas): posible carril descuidado en ataque.", never, n)
         if race["us"] / n >= 0.6:
             ctx.finding("strength", f"Tumban el primer Guardian rival antes de perder el suyo en {race['us']} de {n} partidas.", race["us"], n)
         elif race["them"] / n >= 0.6:

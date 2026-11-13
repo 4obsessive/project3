@@ -234,11 +234,10 @@ def objectives(mi, objs=None, lanes=None):
 
 
 def midboss(mi):
-    """Interpretación (no documentada): si lo reclama un equipo distinto del que lo mató, es un robo."""
+    """Muertes del Midboss tal como las da la API: segundo, equipo que lo mata y equipo que lo reclama."""
     out = []
     for i, m in enumerate(mi.get("mid_boss") or []):
-        k, c = m.get("team_killed"), m.get("team_claimed")
-        out.append({"n": i + 1, "t": m.get("destroyed_time_s"), "team_killed": k, "team_claimed": c, "stolen": (k is not None and c is not None and k != c)})
+        out.append({"n": i + 1, "t": m.get("destroyed_time_s"), "team_killed": m.get("team_killed"), "team_claimed": m.get("team_claimed")})
     return out
 
 

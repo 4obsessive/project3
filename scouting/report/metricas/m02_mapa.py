@@ -74,7 +74,7 @@ def mapa(ctx):
         for c in strong:
             ctx.finding("strength", f"Ganan peleas de forma repetida en la zona {cell_name(c)} del mapa ({cell_k[c]} kills vs {cell_d[c]} muertes; en {len(match_k[c])} de {ctx.n} partidas).", len(match_k[c]), ctx.n)
         if weak:
-            ctx.finding("improve", f"Revisar el posicionamiento en {', '.join(cell_name(c) for c in weak)}: es donde más pierden enfrentamientos.", None, None, confirmed=False)
+            ctx.finding("improve", f"Revisar el posicionamiento en {', '.join(cell_name(c) for c in weak)}: es donde más pierden enfrentamientos.", None, None)
     else:
         blocks.append({"type": "text", "tone": "info", "text": "Las conclusiones por zona solo se generan con el lado normalizado (si no, las zonas mezclan bases distintas)."})
     return blocks

@@ -91,8 +91,7 @@ class MatchFixture(unittest.TestCase):
     def test_midboss(self):
         mb = M.midboss(self.mi)
         self.assertEqual(len(mb), 3)
-        self.assertTrue(mb[0]["stolen"])  # mata el 0, reclama el 1
-        self.assertFalse(mb[1]["stolen"])
+        self.assertNotIn("stolen", mb[0])
         self.assertEqual(mb[0]["t"], 1237)
 
     def test_networth_interpolation(self):
@@ -145,6 +144,20 @@ class SideAndReport(unittest.TestCase):
         # KOTH y cristales: no disponibles
         koth = next(s for s in out["sections"] if s["id"] == "koth")
         self.assertTrue(any(b["type"] == "unavailable" for b in koth["blocks"]))
+
+    def test_report_has_no_interpretation(self):
+        out = report.run("Prueba", [self.data], self.team1)
+        for s in out["sections"]:
+            for b in s["blocks"]:
+                if b["type"] == "text":
+                    self.assertNotEqual(b["tone"], "interpretation")
+                if b["type"] == "table":
+                    keys = {c["key"] for c in b["columns"]}
+                    self.assertNotIn("contexto", keys)
+                    self.assertNotIn("robos", keys)
+                    self.assertNotIn("tipo", keys)
+                    for r in b["rows"]:
+                        self.assertNotEqual(r.get("tipo"), "interpretación")
 
     def test_our_heroes(self):
         out = report.run("Prueba", [self.data], self.team1)

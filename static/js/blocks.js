@@ -26,7 +26,7 @@ function laneSeqCell(seq) {
 const laneCol = c => c.fmt === 'lane' ? { render: r => laneChip(r.carril_id, LANES) }
   : c.fmt === 'lane_seq' ? { render: r => laneSeqCell(r[c.key]), sort: r => laneSeqText(r[c.key]), sortable: false } : {};
 
-const TONE = { confirmed: 'confirmado', interpretation: 'interpretación', warning: 'aviso', info: 'nota' };
+const TONE = { confirmed: 'confirmado', warning: 'aviso', info: 'nota' };
 
 export function renderBlock(b) {
   const title = (t, n) => t ? el('div', { class: 'chart-title' }, el('b', {}, t), n != null ? el('span', { class: 'n-badge' }, `n = ${n} partidas`) : null) : null;

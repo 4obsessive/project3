@@ -5,7 +5,7 @@ bloques (o un dict {"blocks": [...], "findings": [...]}). La web pinta los bloqu
 métrica. Para añadir una métrica basta con crear un archivo en scouting/report/metricas/.
 
 Tipos de bloque:
-  text        {text, tone: confirmed|interpretation|warning|info}
+  text        {text, tone: confirmed|warning|info}
   table       {title, columns:[{key,label,fmt}], rows:[{...}], n}
   bars        {title, labels:[...], series:[{name, values, side}], unit, n}
   histogram   {title, series:[{name, values(s), side}], bin_s, n}
@@ -87,9 +87,9 @@ class ReportCtx:
         self.n = len(matches)
         self.findings = []
 
-    def finding(self, kind, text, support=None, total=None, confirmed=True):
+    def finding(self, kind, text, support=None, total=None):
         """kind: strength | weakness | pattern | improve | opportunity"""
-        self.findings.append({"kind": kind, "text": text, "support": support, "total": total, "confirmed": confirmed})
+        self.findings.append({"kind": kind, "text": text, "support": support, "total": total})
 
     def sample_warning(self, n=None, what="partidas"):
         n = self.n if n is None else n

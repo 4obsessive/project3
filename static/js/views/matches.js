@@ -102,12 +102,7 @@ let heroById = new Map();
 /** Retrato del héroe de un jugador de la partida (con los datos de /api/heroes si hay). */
 const portrait = (p, opts) => heroPortrait(heroById.get(p.hero_id) || { id: p.hero_id, name: p.hero }, opts);
 const pname = p => p.name || `Cuenta ${p.account_id}`;
-const kdaRatio = p => (p.kills + p.assists) / Math.max(1, p.deaths);
-function mvpOf(m) {
-  const r1 = m.players.find(p => p.mvp_rank === 1);
-  if (r1) return r1;
-  return m.players.slice().sort((a, b) => kdaRatio(b) * b.net_worth - kdaRatio(a) * a.net_worth)[0];
-}
+const mvpOf = m => m.players.find(p => p.mvp_rank === 1) || null;
 const teamSum = (m, t, k) => m.players.filter(p => p.team === t).reduce((a, p) => a + (p[k] || 0), 0);
 
 function scoreboard(m, TN, verified) {
@@ -193,10 +188,10 @@ function resumen(root, m, tname, ctx) {
   const maxKA = Math.max(...m.players.map(p => p.kills + p.deaths + p.assists), 1);
   const maxDmg = Math.max(...m.players.map(p => p.player_damage || 0), 1);
   const who = p => p.player_id ? el('button', { type: 'button', class: 'linkbtn', onclick: () => openProfile(p.player_id, ctx) }, pname(p)) : el('span', { class: 'muted' }, pname(p));
-  root.append(el('div', { class: 'mvp' }, el('span', { class: 'mvp-badge' }, icon('star'), 'MVP'),
+  if (mvp) root.append(el('div', { class: 'mvp' }, el('span', { class: 'mvp-badge' }, icon('star'), 'MVP'),
     el('div', {}, portrait(mvp, { size: 'sm', shape: 'round' }), ' ', el('b', { class: 'mvp-hero' }, mvp.hero), ' · ', who(mvp), ' · ', el('span', { class: `tag t${mvp.team}` }, tname(mvp.team))),
     el('div', { class: 'mvp-stats' }, `${mvp.kills}/${mvp.deaths}/${mvp.assists}`, el('span', { class: 'muted' }, ` · ${fmt.int(mvp.net_worth)} oro`),
-      el('span', { class: 'muted small' }, mvp.mvp_rank === 1 ? ' (según la partida)' : ' (estimado: KDA × oro)'))));
+      el('span', { class: 'muted small' }, ' (según la partida)'))));
   const grid = el('div', { class: 'grid2' });
   for (const t of [0, 1]) {
     const ps = m.players.filter(p => p.team === t).sort((a, b) => b.net_worth - a.net_worth);
@@ -220,7 +215,7 @@ function resumen(root, m, tname, ctx) {
       { key: 'name', label: 'Jugador', render: p => who(p) },
       { key: 'kills', label: 'K' }, { key: 'deaths', label: 'D' }, { key: 'assists', label: 'A' },
       { key: 'net_worth', label: 'Net worth', fmt: 'int' }, { key: 'player_damage', label: 'Daño', fmt: 'int' }, { key: 'last_hits', label: 'Last hits' }, { key: 'denies', label: 'Denies' }, { key: 'level', label: 'Nivel' },
-      { key: 'comeback_gold_koth', label: 'Comeback Gold Koth', title: '> 0: ganó al menos un KOTH yendo por detrás (no es un recuento)' },
+      { key: 'comeback_gold_koth', label: 'Comeback Gold Koth' },
     ], m.players.filter(p => p.team === t), { sortKey: 'net_worth' }));
   }
   root.append(det);
@@ -300,13 +295,11 @@ function kothCard(m, tname) {
 
 function midboss(root, m, tname) {
   root.append(el('div', { class: 'koth-head' }, objectiveImg('Midboss', null, { size: 'lg' }), el('h3', {}, 'Midboss')),
-    el('div', { class: 'note interpretation' }, el('span', { class: 'lbl' }, 'interpretación'), '«Reclamado» (team_claimed) no está documentado: si lo reclama quien no lo mató, se considera un robo.'),
     el('div', { class: 'unavailable block' }, el('b', {}, 'No disponible: '), 'cristales, quién lo inicia e intentos fallidos (la API no los registra).'),
     m.midboss.length ? dataTable([
       { key: 'n', label: '#' }, { key: 't', label: 'Minuto', fmt: 'mmss' },
       { key: 'team_killed', label: 'Lo mata', render: r => el('span', { class: `tag t${r.team_killed}` }, tname(r.team_killed)) },
       { key: 'team_claimed', label: 'Lo reclama', render: r => el('span', { class: `tag t${r.team_claimed}` }, tname(r.team_claimed)) },
-      { key: 'stolen', label: '¿Robo?', render: r => r.stolen ? el('span', { class: 'hero-cell' }, objectiveImg('Rejuvenator', null, { size: 'sm' }), 'sí (interpretación)') : 'no' },
     ], m.midboss, { sortKey: 't', asc: true }) : el('p', { class: 'muted' }, 'No hubo Midboss.'));
 }
 
