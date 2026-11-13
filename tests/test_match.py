@@ -126,6 +126,14 @@ class SideAndReport(unittest.TestCase):
         side, _ = report.detect_side(self.mi, set())
         self.assertIsNone(side)
 
+    def test_economia_blocks_sources_and_rates(self):
+        out = report.run("Prueba", [self.data], self.team1)
+        eco = next(s for s in out["sections"] if s["id"] == "economia")
+        self.assertNotIn("error", eco)
+        titles = [b.get("title", "") for b in eco["blocks"]]
+        self.assertTrue(any("Almas por fuente" in t for t in titles))
+        self.assertTrue(any("Ritmos por minuto" in t for t in titles))
+
     def test_report_runs_all_metrics(self):
         out = report.run("Prueba", [self.data], self.team1)
         self.assertEqual(out["n"], 1)
@@ -237,3 +245,31 @@ class Minimap(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Economy(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mi = load_fixture()["match_info"]
+        cls.eco = M.economy(cls.mi)
+        cls.p10 = next(p for p in cls.eco["players"] if p["slot"] == 10)
+
+    def test_sources_sum_final(self):
+        self.assertEqual(self.p10["sources"], {1: 2779, 2: 8631, 3: 2917, 4: 3518, 5: 931, 6: 2827, 7: 271, 8: 286, 12: 4347})
+
+    def test_per_min(self):
+        mins = 2416 / 60
+        self.assertEqual(self.p10["per_min"]["troopers_kills"], round(70 / mins, 2))
+        self.assertEqual(self.p10["per_min"]["jungla_kills"], round(8 / mins, 2))
+
+    def test_phases_cover_duration(self):
+        self.assertEqual(self.eco["phases"][-1][1], self.mi["duration_s"])
+        for t in self.eco["teams"].values():
+            self.assertEqual(len(t["per_phase"]), 3)
+            for ph in t["per_phase"]:
+                self.assertTrue(all(v >= 0 for v in ph.values()))
+
+    def test_overview_and_names(self):
+        ov = M.overview(self.mi)
+        self.assertIn("economy", ov)
+        self.assertEqual(ov["economy"]["source_names"][3], "Jungla")

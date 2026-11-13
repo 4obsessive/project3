@@ -308,6 +308,79 @@ def team_networth_at(mi, team, t):
     return sum(stat_at(p, "net_worth", t) or 0 for p in mi.get("players") or [] if p.get("team") == team)
 
 
+GOLD_SOURCES = {1: "Kills", 2: "Troopers", 3: "Jungla", 4: "Objetivos", 5: "Tesoro", 6: "Asistencias", 7: "Denies",
+                8: "Catch-up de equipo", 9: "Asesinato (habilidad)", 10: "Objeto (10)", 11: "Cultist Sacrifice",
+                12: "Rompibles", 13: "Objeto (13)"}
+
+
+def source_at(player, source, t):
+    """Oro acumulado de una fuente (gold_sources[].gold) en el segundo t, interpolado como stat_at."""
+    st = player.get("stats") or []
+    if not st:
+        return None
+
+    def g(s):
+        for x in s.get("gold_sources") or []:
+            if x.get("source") == source:
+                return x.get("gold") or 0
+        return 0
+    ts = [s.get("time_stamp_s", 0) for s in st]
+    i = bisect.bisect_left(ts, t)
+    if i == 0:
+        v1 = g(st[0])
+        return v1 * (t / ts[0]) if ts[0] else v1
+    if i >= len(st):
+        return g(st[-1])
+    t0, t1 = ts[i - 1], ts[i]
+    v0, v1 = g(st[i - 1]), g(st[i])
+    return v0 + (v1 - v0) * ((t - t0) / (t1 - t0) if t1 > t0 else 0)
+
+
+def _cumulative(player, t):
+    """Valores acumulados en t: kills de troopers/jungla, almas y oro por fuente."""
+    c = {"troopers_kills": stat_at(player, "creep_kills", t) or 0, "jungla_kills": stat_at(player, "neutral_kills", t) or 0,
+         "almas": stat_at(player, "net_worth", t) or 0}
+    c["troopers_jungla_kills"] = c["troopers_kills"] + c["jungla_kills"]
+    for sid in GOLD_SOURCES:
+        c[f"fuente_{sid}"] = source_at(player, sid, t) or 0
+    return c
+
+
+def _rates(players, t0, t1):
+    """Ritmo por minuto entre t0 y t1 sumando los jugadores dados."""
+    mins = (t1 - t0) / 60
+    tot = {}
+    for p in players:
+        a, b = _cumulative(p, t0), _cumulative(p, t1)
+        for k in b:
+            tot[k] = tot.get(k, 0) + (b[k] - a[k])
+    return {k: round(max(v, 0) / mins, 2) if mins > 0 else 0 for k, v in tot.items()}
+
+
+def economy(mi):
+    """Almas por fuente y ritmos por minuto, por jugador, equipo y fase (0-10, 10-20, 20-fin)."""
+    dur = mi.get("duration_s") or 0
+    phases = [[0, 600], [600, 1200], [1200, dur]]
+    ps = mi.get("players") or []
+
+    def sources(plist):
+        out = {}
+        for sid in GOLD_SOURCES:
+            v = sum(source_at(p, sid, dur) or 0 for p in plist)
+            if v:
+                out[sid] = round(v)
+        return out
+    teams = {}
+    for tm in (0, 1):
+        plist = [p for p in ps if p.get("team") == tm]
+        teams[str(tm)] = {"sources": sources(plist), "per_min": _rates(plist, 0, dur),
+                          "per_phase": [_rates(plist, a, b) for a, b in phases]}
+    players_out = [{"slot": p.get("player_slot"), "team": p.get("team"), "sources": sources([p]), "per_min": _rates([p], 0, dur)}
+                   for p in sorted(ps, key=lambda p: (p.get("team"), p.get("player_slot")))]
+    return {"phases": phases, "teams": teams, "players": players_out,
+            "source_names": dict(GOLD_SOURCES)}
+
+
 COMEBACK_RATIO = 0.9
 
 
@@ -368,4 +441,5 @@ def overview(mi, hero_names=None):
         "deaths": deaths(mi),
         "objective_map": {"objetivos": {str(k): v for k, v in objs.items()}, "carriles": {str(k): v for k, v in lanes.items()}},
         "lanes": lanes_payload(),
+        "economy": economy(mi),
     }
