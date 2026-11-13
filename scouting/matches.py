@@ -386,7 +386,7 @@ COMEBACK_RATIO = 0.9
 
 
 def comeback_team_at(mi, t):
-    """Equipo en remontada en el segundo t (regla del 10 %: almas < 0,9 × las del rival), o None si ninguno."""
+    """Equipo en remontada en el segundo t (regla del 10 %: net worth < 0,9 × el del rival), o None si ninguno."""
     nw = {tm: team_networth_at(mi, tm, t) for tm in (0, 1)}
     for tm in (0, 1):
         if nw[tm] < COMEBACK_RATIO * nw[1 - tm]:

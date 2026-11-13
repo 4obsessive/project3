@@ -122,8 +122,8 @@ Otros campos útiles verificados en la partida: `players[].stats[]` trae `player
 - **Rejuvenators**: `RejuvStatusEvent` con `event_type = 4` (3 filas por midboss). Los tipos 5 y 6 no se usan (sin confirmar).
 - **KOTH**: transiciones de `m_nKothScoringTeam`, `m_timeKothScoring`, `m_timeKothCashInStarted`, `m_timeKothGiveUp` (infinito ~3,4e38 mientras sigue abierto).
 - **Economía**: `GoldHistoryEvent` viene **vacío** y `CurrencyChangedEvent` usa otra numeración (39 códigos) sin documentar, así que el desglose por fuente y los ritmos por minuto salen de las muestras `stats` de los metadatos (`gold_sources`, `net_worth`), no del demo.
-- **Fuentes de almas** (`gold_sources[].source`): 1 Kills, 2 Troopers, 3 Jungla, 4 Objetivos, 6 Asistencias, 7 Denies, 11 Cultist Sacrifice, 12 Rompibles (verificadas con datos); 5 Tesoro, 8 Catch-up de equipo, 9 Asesinato por habilidad, 10/13 objetos: según el esquema de la API, sin confirmar. «Haunts» (captura del usuario) no tiene correspondencia: no se inventa.
-- **Remontada**: equipo con almas < 0,9 × las del rival (regla del 10 %), con net worth interpolado de los metadatos.
+- **Fuentes de almas** (`gold_sources[].source`): 1 Kills, 2 Troopers, 3 Jungla, 4 Objetivos, 6 Asistencias, 7 Denies, 11 Cultist Sacrifice, 12 Rompibles (verificadas con datos); 5 Tesoro, 8 Catch-up de equipo, 9 Asesinato por habilidad, 10/13 objetos: sin confirmar (nombres según el esquema de la API). «Haunts» (captura del usuario) no tiene correspondencia: no se inventa.
+- **Remontada**: equipo con net worth < 0,9 × el del rival (regla del 10 %), interpolado de las muestras `stats` de los metadatos.
 
 ## 5. Minimapa
 
