@@ -48,13 +48,19 @@ informe, a escala de una sola partida. Regla vigente: nada inventado ni interpre
   ```
   Tramos de 5 s (320 ticks). `<LIMITE>` = ticks de 600 s de juego más las pausas (fórmula de tiempo ya usada:
   `(tick − ticks en pausa) / 64`); el constructor elige cómo fijarlo (p. ej. un margen y recortar al convertir).
+  Implementado (ruling P7): `LANE_TICK_LIMIT = (600 + 3600) * 64` (600 s de juego + hasta 1 h de pausas); el límite usado
+  se guarda con las filas (`lane_damage_limit`; 48000 en las filas antiguas que no lo tienen). Si con las pausas de la
+  partida ese límite no llega a 600 s de juego, el daño del demo está incompleto: la partida se trata como sin demo
+  (modo aprox.) y se avisa («demo incompleto») en la vista y en el informe. Filas vacías o sin jugadores de la partida
+  tampoco cuentan como demo.
   Cada fila se pasa a segundos de juego con la fórmula existente. Cuentas → jugadores por `account_id`.
 - Kills con segundo exacto: `death_details` de los metadatos (ya usado).
 - Guardians por línea: `matches.objectives()` (ya existe, con línea y minuto en que cae).
 - Farm/economía: `matches.economy()` y `stats` (ya existen).
-- **Sin demo** (partidas antiguas o pendientes): daño de fase de líneas interpolado al 600 s desde `damage_matrix`
-  (muestras cada 180 s), sin separar daño de gankeos; gankeos solo por kills (un jugador de otra línea mata a uno de la
-  línea). Cada bloque indica qué fuente usó y en cuántas partidas.
+- **Sin demo** (partidas antiguas o pendientes): daño de fase de líneas interpolado al 600 s desde `stats`
+  (`player_damage` / `player_damage_taken`, ruling P3; muestras cada pocos minutos), sin separar daño de gankeos; los
+  gankeos (y el primer gankeo) quedan «no disponible» («–»): necesitan el demo. Cada bloque indica qué fuente usó y en
+  cuántas partidas.
 
 ## No objetivos
 
@@ -97,9 +103,10 @@ informe, a escala de una sola partida. Regla vigente: nada inventado ni interpre
 - **Guardian que no cae:** no se inventa un tiempo. Media sobre las partidas en que cayó y, aparte, «no cae en X de N».
 - **Partidas ya hechas:** la consulta nueva se encola sola para todas las partidas con demo, detrás de las nuevas (mismo
   orden que hoy). Mientras falte, el informe muestra lo que haya y dice en cuántas partidas está.
-- **Sin demo:** en la vista de partida, el daño de fase de líneas sale de `damage_matrix` interpolado y marcado «aprox.,
-  sin demo»; el reparto rivales de línea / gankeos sale «no disponible». En el informe, las medias de daño de fase de
-  líneas usan solo partidas con demo (con su `n`); las aproximadas no se mezclan.
+- **Sin demo:** en la vista de partida, el daño de fase de líneas sale de `stats` (`player_damage` /
+  `player_damage_taken`) interpolado y marcado «aprox., sin demo»; el reparto rivales de línea / gankeos y los recuentos
+  de gankeos salen «no disponible» («–»). En el informe, las medias de daño de fase de líneas y la tabla/hallazgos de
+  primer gankeo usan solo partidas con demo (con su `n`); las aproximadas no se mezclan.
 
 ## Lo que queda al constructor
 
