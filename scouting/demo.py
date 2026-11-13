@@ -30,10 +30,15 @@ CLUSTER_GAP_S = 60
 # koth_give_up vale ~3.4e38 mientras el cash-in sigue abierto.
 GIVE_UP_INFINITE = 1e30
 
+# Límite de tick de la consulta de líneas: 600 s x 64 = 38400 + margen para pausas.
+# Las filas se recortan a 600 s de juego al usarlas.
+LANE_TICK_LIMIT = 48000
+
 QUERIES = {
     "rejuv": "SELECT tick, killing_team, user_team FROM RejuvStatusEvent WHERE event_type = 4 ORDER BY tick",
     "rules": "SELECT min(tick) AS tick, \"m_pGameRules__m_nKothScoringTeam\" AS koth_team, \"m_pGameRules__m_timeKothScoring\" AS koth_scoring, \"m_pGameRules__m_timeKothCashInStarted\" AS koth_start, \"m_pGameRules__m_timeKothGiveUp\" AS koth_give_up, \"m_pGameRules__m_nTotalPausedTicks\" AS paused_ticks, \"m_pGameRules__m_flGameStartTime\" AS game_start FROM CCitadelGameRulesProxy GROUP BY 2,3,4,5,6,7 ORDER BY 1",
     "midboss": "SELECT d.entindex_victim AS victim, p.team AS team, sum(d.damage) AS dmg, min(d.tick) AS t0, max(d.tick) AS t1 FROM DamageEvent d JOIN (SELECT DISTINCT entity_index, \"m_iTeamNum\" AS team FROM CCitadelPlayerPawn WHERE \"m_iTeamNum\" IS NOT NULL) p ON d.entindex_attacker = p.entity_index WHERE d.victim_class = 8 GROUP BY 1,2 ORDER BY 4",
+    "lane_damage": "SELECT pa.acc AS att, pv.acc AS vic, CAST(d.tick / 320 AS INT) AS b, sum(d.damage) AS dmg FROM DamageEvent d JOIN (SELECT DISTINCT (\"m_hHeroPawn\" & 16383) AS pawn, \"m_unEconAccountID\" AS acc FROM CCitadelPlayerController WHERE \"m_hHeroPawn\" IS NOT NULL AND \"m_unEconAccountID\" > 0) pa ON d.entindex_attacker = pa.pawn JOIN (SELECT DISTINCT (\"m_hHeroPawn\" & 16383) AS pawn, \"m_unEconAccountID\" AS acc FROM CCitadelPlayerController WHERE \"m_hHeroPawn\" IS NOT NULL AND \"m_unEconAccountID\" > 0) pv ON d.entindex_victim = pv.pawn WHERE d.tick < " + str(LANE_TICK_LIMIT) + " AND d.victim_class = 1 AND pa.acc <> pv.acc GROUP BY 1,2,3 ORDER BY 3",
 }
 
 
@@ -273,10 +278,12 @@ class DemoClient:
             raise DemoFatal("respuesta demasiado grande")
         return raw
 
-    def run_queries(self, match_id):
-        """Lanza las 3 consultas del demo y devuelve `results` (formato del fixture)."""
+    def run_queries(self, match_id, only=None):
+        """Lanza las consultas del demo (todas, o solo las claves de QUERIES en `only`) y devuelve `results`."""
         results = {"match_id": int(match_id)}
         for nombre, sql in QUERIES.items():
+            if only is not None and nombre not in only:
+                continue
             job = json.loads(self._request(QUERY_URL, {"match_id": int(match_id), "query": sql, "format": "ndjson"}))
             job_id = job.get("job_id")
             if not job_id:
@@ -351,6 +358,27 @@ def summary(con, match_id):
     return {"state": "pending", "reason": "en cola"}
 
 
+def lane_data(con, match_id):
+    """Datos crudos de la fase de líneas de una partida: {"rows": lane_damage, "rules": filas de reglas}.
+
+    Las filas `rules` permiten convertir ticks a segundos de partida (game_seconds_from_tick).
+    None si la partida no tiene `lane_damage` (sin fila, sin raw, aún sin rellenar o sin demo)."""
+    r = con.execute("SELECT raw FROM demo_jobs WHERE match_id=?", (int(match_id),)).fetchone()
+    if r is None or not r["raw"]:
+        return None
+    raw = json.loads(r["raw"])
+    rows = raw.get("lane_damage")
+    if rows is None:
+        return None
+    return {"rows": rows, "rules": sorted(raw.get("rules") or [], key=lambda x: x["tick"])}
+
+
+def lane_rows(con, match_id):
+    """Filas crudas `lane_damage` de la partida, o None si no están."""
+    d = lane_data(con, match_id)
+    return None if d is None else d["rows"]
+
+
 def counts(con):
     """Recuento de partidas por estado."""
     out = {"pending": 0, "done": 0, "nodemo": 0, "error": 0}
@@ -391,18 +419,64 @@ class Worker:
     def step(self):
         """Procesa una partida. False si no hay nada pendiente o no hay presupuesto."""
         t = self.client.now()
-        if t < self._pausa_hasta or self.budget - self.client.posts_last_hour() < len(QUERIES):
+        if t < self._pausa_hasta:
             return False
+        libres = self.budget - self.client.posts_last_hour()
         con = self.con_factory()
-        fila = con.execute("SELECT match_id, attempts FROM demo_jobs WHERE state='pending' AND next_try<=? "
-                           "ORDER BY match_id DESC LIMIT 1", (int(t),)).fetchone()
-        if fila is None:
+        fila = None
+        if libres >= len(QUERIES):
+            fila = con.execute("SELECT match_id, attempts FROM demo_jobs WHERE state='pending' AND next_try<=? "
+                               "ORDER BY match_id DESC LIMIT 1", (int(t),)).fetchone()
+        if fila is not None:
+            try:
+                return self._procesar(con, t, fila["match_id"], fila["attempts"])
+            finally:
+                self._guardar(con)
+        # Sin pendientes: relleno de la consulta de líneas en partidas ya hechas (1 POST cada una).
+        if libres < 1:
             return False
-        mid, intentos = fila["match_id"], fila["attempts"]
         try:
-            return self._procesar(con, t, mid, intentos)
+            return self._rellenar(con, t)
         finally:
             self._guardar(con)
+
+    def _rellenar(self, con, t):
+        """Pide solo `lane_damage` de la partida `done` más reciente que aún no la tiene."""
+        cand = con.execute("SELECT match_id, lane_attempts FROM demo_jobs WHERE state='done' AND raw IS NOT NULL "
+                           "AND lane_state IS NULL AND lane_next_try<=? ORDER BY match_id DESC", (int(t),)).fetchall()
+        for c in cand:
+            mid, intentos = c["match_id"], c["lane_attempts"]
+            raw = json.loads(con.execute("SELECT raw FROM demo_jobs WHERE match_id=?", (mid,)).fetchone()[0])
+            if "lane_damage" in raw:  # ya la tiene (p. ej. filas escritas fuera del trabajador)
+                self._lane_marcar(con, mid, lane_state="ok")
+                continue
+            return self._rellenar_una(con, t, mid, intentos, raw)
+        return False
+
+    def _rellenar_una(self, con, t, mid, intentos, raw):
+        # Un error aquí nunca toca `state` ni `summary`: solo las columnas lane_*.
+        try:
+            res = self.client.run_queries(mid, only=["lane_damage"])
+            raw["lane_damage"] = res["lane_damage"]
+            self._lane_marcar(con, mid, lane_state="ok", raw=_json(raw))
+        except NoDemo:
+            self._lane_marcar(con, mid, lane_state="nodemo")  # no se reintenta
+        except RateLimited:
+            self._pausa_hasta = t + RATE_LIMIT_WAIT_S
+            self._lane_marcar(con, mid, lane_next_try=int(t + RATE_LIMIT_WAIT_S))
+        except Exception as e:
+            intentos += 1
+            fatal = isinstance(e, DemoFatal) or intentos >= MAX_ATTEMPTS
+            print(f"[demo] relleno de líneas de la partida {mid}: {e}")
+            self._lane_marcar(con, mid, lane_attempts=intentos, lane_next_try=int(t + 600 * intentos),
+                              **({"lane_state": "error"} if fatal else {}))
+        return True
+
+    @staticmethod
+    def _lane_marcar(con, mid, **campos):
+        cols = ", ".join(f"{k}=?" for k in campos)
+        with con:
+            con.execute(f"UPDATE demo_jobs SET {cols} WHERE match_id=?", (*campos.values(), mid))
 
     def _procesar(self, con, t, mid, intentos):
         try:
@@ -411,7 +485,8 @@ class Worker:
                 resumen = summarize(res)
             except Exception as e:  # determinista: reintentar solo gastaría presupuesto
                 raise DemoFatal(f"no se pudo resumir el demo: {e!r}")
-            self._marcar(con, mid, "done", summary=_json(resumen), raw=_json(res), error=None)
+            self._marcar(con, mid, "done", summary=_json(resumen), raw=_json(res), error=None,
+                         lane_state="ok" if "lane_damage" in res else None)
         except NoDemo:
             self._marcar(con, mid, "nodemo", error=None)
         except RateLimited:

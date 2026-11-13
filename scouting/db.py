@@ -172,6 +172,10 @@ MIGRATIONS = [
     ("hero_stats", "mvp_rank_counts", "TEXT"),
     ("hero_stats", "mvp_rated_matches", "INTEGER"),
     ("demo_jobs", "raw", "TEXT"),    # resultados crudos del demo, para rehacer el resumen
+    # Relleno de la consulta de líneas en filas ya `done`: NULL = por rellenar, ok | nodemo | error.
+    ("demo_jobs", "lane_state", "TEXT"),
+    ("demo_jobs", "lane_attempts", "INTEGER NOT NULL DEFAULT 0"),
+    ("demo_jobs", "lane_next_try", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 HERO_STATS_COLS = [

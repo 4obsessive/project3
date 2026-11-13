@@ -5,6 +5,7 @@ import unittest
 from scouting import demo, report
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "demo_135801973.json")
+LANE_FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "demo_lane_135801973.json")
 
 
 def cargar():
@@ -19,7 +20,12 @@ class Summarize(unittest.TestCase):
         self.s = demo.summarize(self.results)
 
     def test_queries_match_fixture(self):
-        self.assertEqual(demo.QUERIES, self.data["queries"])
+        # Las 3 consultas originales siguen idénticas; la de líneas se comprueba contra su propio fixture.
+        self.assertEqual({k: v for k, v in demo.QUERIES.items() if k != "lane_damage"}, self.data["queries"])
+        with open(LANE_FIXTURE, encoding="utf-8") as f:
+            lane = json.load(f)
+        self.assertEqual(demo.QUERIES["lane_damage"], lane["query"])
+        self.assertEqual(demo.LANE_TICK_LIMIT, 48000)
 
     def test_tick_to_game_seconds(self):
         rules = self.results["rules"]
@@ -200,6 +206,9 @@ class Worker(unittest.TestCase):
         old_hooks = list(matches.ON_STORE)
         self.addCleanup(lambda: matches.ON_STORE.__setitem__(slice(None), old_hooks))
         self.fixture = cargar()
+        with open(LANE_FIXTURE, encoding="utf-8") as f:
+            self.lane = json.load(f)["rows"]
+        self.fixture["results"]["lane_damage"] = self.lane
         self.t = [1_000_000.0]
 
     def mk(self, mode="ok", result_url=None):
@@ -222,7 +231,7 @@ class Worker(unittest.TestCase):
         s = demo.summary(self.con, 135801973)
         self.assertEqual(s["state"], "done")
         self.assertEqual(s["midboss"][0]["rejuv"], {"0": 0, "1": 3})
-        self.assertEqual(len(self.op.calls), 9)
+        self.assertEqual(len(self.op.calls), 12)
         for c in self.op.calls:
             h = {k.lower(): v for k, v in c["headers"].items()}
             self.assertEqual(h["user-agent"], "deadlock-scouting-local/1.0")
@@ -403,6 +412,138 @@ class Worker(unittest.TestCase):
         with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "match_109084310.json"), encoding="utf-8") as f:
             data = json.load(f)
         self.assertEqual(matches.store(self.con, data, "test"), 109084310)
+
+    # ---- fase de líneas
+    def _posts(self):
+        return [json.loads(c["data"])["query"] for c in self.op.calls if c["method"] == "POST"]
+
+    def _hecha_sin_lineas(self, mid=5):
+        res = {k: v for k, v in self.fixture["results"].items() if k != "lane_damage"}
+        with self.con:
+            self.con.execute("INSERT INTO demo_jobs(match_id, state, summary, raw, updated_at) VALUES(?, 'done', ?, ?, 0)",
+                             (mid, json.dumps(demo.summarize(res)), json.dumps(res)))
+        return res
+
+    def test_new_match_runs_four_queries(self):
+        w = self.mk()
+        demo.enqueue(self.con, 135801973)
+        w.step()
+        self.assertEqual(sorted(self._posts()), sorted(demo.QUERIES.values()))
+        self.assertEqual(len(self._posts()), 4)
+        self.assertEqual(demo.lane_rows(self.con, 135801973), self.lane)
+
+    def test_done_row_backfills_only_lane_query(self):
+        res = self._hecha_sin_lineas()
+        antes = demo.summary(self.con, 5)
+        w = self.mk()
+        self.assertTrue(w.step())
+        self.assertEqual(self._posts(), [demo.QUERIES["lane_damage"]])
+        raw = json.loads(self.con.execute("SELECT raw FROM demo_jobs WHERE match_id=5").fetchone()[0])
+        self.assertEqual(raw["lane_damage"], self.lane)
+        self.assertEqual(raw["rules"], res["rules"])
+        self.assertEqual(self.con.execute("SELECT state FROM demo_jobs").fetchone()[0], "done")
+        self.assertEqual(demo.summary(self.con, 5), antes)
+        n = len(self.op.calls)
+        self.assertFalse(w.step())  # ya completa: nada más que hacer
+        self.assertEqual(len(self.op.calls), n)
+
+    def test_lane_rows_none_until_backfilled(self):
+        self._hecha_sin_lineas()
+        self.assertIsNone(demo.lane_rows(self.con, 5))
+        self.assertIsNone(demo.lane_data(self.con, 5))
+        self.assertIsNone(demo.lane_rows(self.con, 999))
+        self.mk().step()
+        self.assertEqual(demo.lane_rows(self.con, 5), self.lane)
+        d = demo.lane_data(self.con, 5)
+        self.assertEqual(d["rows"], self.lane)
+        self.assertEqual(d["rules"], self.fixture["results"]["rules"])
+
+    def test_backfill_error_keeps_done(self):
+        self._hecha_sin_lineas()
+        antes = demo.summary(self.con, 5)
+        w = self.mk("404other")
+        t = self.t[0]
+        self.assertTrue(w.step())
+        r = self.con.execute("SELECT state, attempts, lane_attempts, lane_next_try FROM demo_jobs").fetchone()
+        self.assertEqual((r["state"], r["attempts"], r["lane_attempts"]), ("done", 0, 1))
+        self.assertEqual(r["lane_next_try"], int(t + 600))
+        self.assertEqual(demo.summary(self.con, 5), antes)
+        self.assertFalse(w.step())  # en espera
+        for _ in range(demo.MAX_ATTEMPTS - 1):
+            self.t[0] += 100_000
+            self.assertTrue(w.step())
+        self.assertEqual(self.con.execute("SELECT state FROM demo_jobs").fetchone()[0], "done")
+        self.t[0] += 100_000_000
+        self.assertFalse(w.step())  # agotados los reintentos
+        self.assertEqual(demo.summary(self.con, 5), antes)
+        self.assertIsNone(demo.lane_rows(self.con, 5))
+
+    def test_backfill_nodemo_marks_unavailable_once(self):
+        self._hecha_sin_lineas()
+        antes = demo.summary(self.con, 5)
+        w = self.mk("404")
+        self.assertTrue(w.step())
+        self.assertEqual(self.con.execute("SELECT state FROM demo_jobs").fetchone()[0], "done")
+        self.assertEqual(demo.summary(self.con, 5), antes)
+        self.assertIsNone(demo.lane_data(self.con, 5))
+        n = len(self.op.calls)
+        self.t[0] += 100_000_000
+        self.assertFalse(w.step())
+        self.assertEqual(len(self.op.calls), n)
+
+    def test_backfill_429_pauses_and_keeps_done(self):
+        self._hecha_sin_lineas()
+        w = self.mk("429")
+        w.step()
+        r = self.con.execute("SELECT state, lane_attempts, lane_next_try FROM demo_jobs").fetchone()
+        self.assertEqual((r["state"], r["lane_attempts"]), ("done", 0))
+        self.assertGreaterEqual(r["lane_next_try"], self.t[0] + 61)
+        self.assertFalse(w.step())
+
+    def test_pending_before_backfill_order(self):
+        self._hecha_sin_lineas(900)  # id mayor que el pendiente, pero primero va lo pendiente
+        demo.enqueue(self.con, 100)
+        w = self.mk()
+        w.step()
+        self.assertEqual(len(self._posts()), 4)
+        estados = dict(self.con.execute("SELECT match_id, state FROM demo_jobs").fetchall())
+        self.assertEqual(estados, {100: "done", 900: "done"})
+        self.assertIsNone(demo.lane_rows(self.con, 900))
+        w.step()
+        self.assertEqual(len(self._posts()), 5)
+        self.assertEqual(demo.lane_rows(self.con, 900), self.lane)
+
+    def test_backfill_order_match_id_desc(self):
+        self._hecha_sin_lineas(5)
+        self._hecha_sin_lineas(7)
+        w = self.mk()
+        w.step()
+        self.assertIsNotNone(demo.lane_rows(self.con, 7))
+        self.assertIsNone(demo.lane_rows(self.con, 5))
+
+    def test_backfill_needs_one_post_of_budget(self):
+        self._hecha_sin_lineas()
+        w = self.mk()
+        self.client.post_times.extend([self.t[0] - 10] * 149)
+        self.assertTrue(w.step())
+        self.assertEqual(len(self._posts()), 1)
+
+    def test_lane_migration_on_old_table(self):
+        import sqlite3
+        path = os.path.join(self.tmp.name, "viejo2.db")
+        c = sqlite3.connect(path)
+        c.execute("CREATE TABLE demo_jobs (match_id INTEGER PRIMARY KEY, state TEXT NOT NULL, summary TEXT, error TEXT, raw TEXT, "
+                  "attempts INTEGER NOT NULL DEFAULT 0, next_try INTEGER NOT NULL DEFAULT 0, updated_at INTEGER)")
+        c.execute("INSERT INTO demo_jobs(match_id, state, raw, updated_at) VALUES(1, 'done', '{}', 0)")
+        c.commit()
+        c.close()
+        con = db.connect(path)
+        self.addCleanup(con.close)
+        cols = [r[1] for r in con.execute("PRAGMA table_info(demo_jobs)")]
+        for col in ("lane_state", "lane_attempts", "lane_next_try"):
+            self.assertIn(col, cols)
+        self.assertEqual(tuple(con.execute("SELECT lane_attempts, lane_next_try FROM demo_jobs").fetchone()), (0, 0))
+        db.connect(path).close()
 
 
 class Unavailable(unittest.TestCase):
