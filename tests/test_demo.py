@@ -2,7 +2,7 @@ import json
 import os
 import unittest
 
-from scouting import demo
+from scouting import demo, report
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "demo_135801973.json")
 
@@ -320,6 +320,76 @@ class Unavailable(unittest.TestCase):
             demo.AVAILABLE = old
         self.assertEqual(s["state"], "unavailable")
         self.assertIn("Python 3.14", s["reason"])
+
+class ReportWithDemo(unittest.TestCase):
+    OUR = 1
+
+    @classmethod
+    def setUpClass(cls):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "match_109084310.json"), encoding="utf-8") as f:
+            cls.data = json.load(f)
+
+    def summary(self, stolen=True):
+        return {"state": "done", "version": 1,
+                "midboss": [
+                    {"n": 1, "t": 1237.0, "damage": {"0": 5000, "1": 9000}, "initiator": 1, "killer": 0, "stolen": stolen,
+                     "rejuv": {"0": 1, "1": 2}},
+                    {"n": 2, "t": 1751.0, "damage": {"0": 100, "1": 200}, "initiator": 1, "killer": 1, "stolen": False,
+                     "rejuv": {"0": 0, "1": 3}},
+                    {"n": 3, "t": 2236.0, "damage": {"0": 100, "1": 100}, "initiator": None, "killer": 0, "stolen": None,
+                     "rejuv": {"0": 1, "1": 0}}],
+                "koth": [{"n": 1, "start_t": 600.0, "completed_by": 1, "completed_t": 700.0},
+                         {"n": 2, "start_t": 1500.0, "completed_by": 0, "completed_t": 1600.0},
+                         {"n": 3, "start_t": 2000.0, "completed_by": None, "completed_t": None}]}
+
+    def run_report(self, summaries):
+        out = report.run("Prueba", [self.data], set(), side_overrides={109084310: self.OUR}, demo_summaries=summaries)
+        return {s["id"]: s for s in out["sections"]}
+
+    def test_comeback_rule(self):
+        def mi(a, b):
+            return {"players": [{"team": 0, "stats": [{"time_stamp_s": 60, "net_worth": a}]},
+                                {"team": 1, "stats": [{"time_stamp_s": 60, "net_worth": b}]}]}
+        self.assertIsNone(matches.comeback_team_at(mi(9000, 10000), 100))
+        self.assertEqual(matches.comeback_team_at(mi(8999, 10000), 100), 0)
+        self.assertEqual(matches.comeback_team_at(mi(10000, 8999), 100), 1)
+
+    def test_midboss_section_uses_demo(self):
+        sec = self.run_report({109084310: self.summary(stolen=True)})["midboss"]
+        tables = [b for b in sec["blocks"] if b["type"] == "table" and any(c["key"] == "rejuv_nuestros" for c in b["columns"])]
+        self.assertEqual(len(tables), 1)
+        keys = {c["key"] for c in tables[0]["columns"]}
+        for k in ("rejuv_nuestros", "rejuv_rival", "dano_nuestro", "dano_rival", "iniciador", "robado", "remontada"):
+            self.assertIn(k, keys)
+        rows = tables[0]["rows"]
+        self.assertEqual(rows[0]["robado"], "sí")
+        self.assertEqual(rows[1]["robado"], "no")
+        self.assertEqual(rows[2]["robado"], "—")
+        self.assertEqual(rows[0]["rejuv_nuestros"], 2)
+        self.assertEqual(rows[0]["dano_nuestro"], 9000)
+        self.assertEqual(tables[0]["n"], 1)
+        texts = " ".join(b.get("text", "") for b in sec["blocks"])
+        self.assertIn("Datos del demo en 1 de 1 partidas", texts)
+
+    def test_midboss_section_without_demo(self):
+        sec = self.run_report({})["midboss"]
+        un = [b for b in sec["blocks"] if b["type"] == "unavailable" and "demo" in b["title"].lower()]
+        self.assertTrue(un)
+        self.assertTrue(any(b["type"] == "table" and b.get("title") == "Detalle" for b in sec["blocks"]))
+
+    def test_koth_section(self):
+        sec = self.run_report({109084310: self.summary()})["koth"]
+        tabs = [b for b in sec["blocks"] if b["type"] == "table"]
+        self.assertTrue(tabs)
+        detail = next(b for b in tabs if any(c["key"] == "remontada" for c in b["columns"]))
+        self.assertEqual(detail["n"], 1)
+        self.assertEqual([r["completa"] for r in detail["rows"]], ["Este equipo", "Rival", "No completado"])
+        self.assertTrue(all(r["remontada"] in ("sí", "no", "—") for r in detail["rows"]))
+
+    def test_koth_without_demo(self):
+        sec = self.run_report({})["koth"]
+        self.assertEqual(sec["blocks"][0]["type"], "unavailable")
 
 
 if __name__ == "__main__":

@@ -30,8 +30,6 @@ def midboss(ctx):
             })
     n = ctx.n
     blocks = [ctx.sample_warning(),
-              {"type": "unavailable", "title": "Cristales del Midboss, quién lo inicia e intentos fallidos",
-               "reason": "La API no registra estos datos: solo da quién lo mató, quién lo reclamó y el segundo."},
               {"type": "text", "tone": "info",
                "text": f"Ventana de kills previas: {win} s. La diferencia de net worth es la de ese segundo (interpolada de las muestras cada pocos minutos)."}]
     if not events:
@@ -79,8 +77,66 @@ def midboss(ctx):
                                {"key": "kill_adv", "label": "Ventaja kills", "fmt": "signed"}, {"key": "nw_adv", "label": "Ventaja NW", "fmt": "signed0"}],
                    "rows": [dict(e, killer_txt="Este equipo" if e["killer"] == "us" else "Rival",
                                  claimer_txt="Este equipo" if e["claimer"] == "us" else "Rival") for e in events]})
+    blocks.extend(_demo_blocks(ctx))
     # patrones
     if n >= 3:
         if first_by["us"] / n >= 0.6:
             ctx.finding("strength", f"Se llevan el primer Midboss en {first_by['us']} de {n} partidas.", first_by["us"], n)
     return blocks
+
+
+def _yn(v):
+    return "—" if v is None else ("sí" if v else "no")
+
+
+def _demo_blocks(ctx):
+    k = ctx.demo_n
+    cov = ctx.demo_coverage()
+    if not k:
+        return [cov, {"type": "unavailable", "title": "Daño, rejuvenators y robos del Midboss (demo)",
+                      "reason": "Ninguna partida analizada tiene datos del demo (pendiente, sin demo o con error)."}]
+    rows = []
+    taken_us = taken_them = steals_made = steals_suffered = 0
+    for m in ctx.matches:
+        d = m.demo
+        if not d:
+            continue
+        for e in d.get("midboss") or []:
+            dm, rj = e.get("damage") or {}, e.get("rejuv") or {}
+            taken_us += rj.get(str(m.our), 0)
+            taken_them += rj.get(str(m.their), 0)
+            if e.get("stolen"):
+                if e.get("killer") == m.our:
+                    steals_made += 1
+                elif e.get("killer") == m.their:
+                    steals_suffered += 1
+            kt = e.get("killer")
+            rows.append({
+                "match_id": m.id, "n": e.get("n"), "t": e.get("t"),
+                "dano_nuestro": dm.get(str(m.our)), "dano_rival": dm.get(str(m.their)),
+                "iniciador": {"us": "Este equipo", "them": "Rival"}.get(m.rel(e.get("initiator")), "—"),
+                "robado": _yn(e.get("stolen")),
+                "rejuv_nuestros": rj.get(str(m.our)), "rejuv_rival": rj.get(str(m.their)),
+                "remontada": "—" if kt is None else _yn(M.comeback_team_at(m.mi, e.get("t") or 0) == kt),
+            })
+    out = [cov]
+    if not rows:
+        out.append({"type": "unavailable", "title": "Daño, rejuvenators y robos del Midboss (demo)",
+                    "reason": "Los demos analizados no registran ninguna muerte del Midboss."})
+        return out
+    out.append({"type": "text", "tone": "info",
+                "text": "Iniciador: el equipo que más daño hizo al Midboss. Robado: lo mata el equipo que no lo inició (solo si hay daño registrado). "
+                        "Remontada: el equipo que lo mata tenía menos del 90 % de las almas del rival (regla del 10 %: un equipo con menos del 90 % de las almas del rival tiene resistencias de remontada)."})
+    n_mb = len(rows)
+    out.append({"type": "text", "tone": "confirmed",
+                "text": f"Rejuvenators cogidos en {n_mb} Midboss: este equipo {taken_us} (media {taken_us / n_mb:.1f} por Midboss), rival {taken_them} (media {taken_them / n_mb:.1f}). "
+                        f"Robos: este equipo {steals_made}, sufridos {steals_suffered}. "
+                        f"Midboss muertos en remontada del que lo mata: {sum(1 for r in rows if r['remontada'] == 'sí')} de {n_mb}."})
+    out.append({"type": "table", "title": "Midboss: daño, rejuvenators y robo (demo)", "n": k,
+                "columns": [{"key": "match_id", "label": "Partida"}, {"key": "n", "label": "#"}, {"key": "t", "label": "Minuto", "fmt": "mmss"},
+                            {"key": "dano_nuestro", "label": "Daño este equipo", "fmt": "int"}, {"key": "dano_rival", "label": "Daño rival", "fmt": "int"},
+                            {"key": "iniciador", "label": "Lo inicia"}, {"key": "robado", "label": "Robado"},
+                            {"key": "rejuv_nuestros", "label": "Rejuv. este equipo"}, {"key": "rejuv_rival", "label": "Rejuv. rival"},
+                            {"key": "remontada", "label": "En remontada"}],
+                "rows": rows})
+    return out

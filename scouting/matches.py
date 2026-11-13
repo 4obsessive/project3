@@ -308,6 +308,18 @@ def team_networth_at(mi, team, t):
     return sum(stat_at(p, "net_worth", t) or 0 for p in mi.get("players") or [] if p.get("team") == team)
 
 
+COMEBACK_RATIO = 0.9
+
+
+def comeback_team_at(mi, t):
+    """Equipo en remontada en el segundo t (regla del 10 %: almas < 0,9 × las del rival), o None si ninguno."""
+    nw = {tm: team_networth_at(mi, tm, t) for tm in (0, 1)}
+    for tm in (0, 1):
+        if nw[tm] < COMEBACK_RATIO * nw[1 - tm]:
+            return tm
+    return None
+
+
 def custom_stat_id(mi, name):
     for c in mi.get("custom_user_stats") or []:
         if c.get("name") == name:

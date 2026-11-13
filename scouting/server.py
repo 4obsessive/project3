@@ -472,7 +472,8 @@ class App:
                 datas.append(matches.fetch(con, self.client, mid))
             except (ApiError, matches.MatchError) as e:
                 errors.append({"match_id": mid, "error": str(e)})
-        out = report.run(team or "Plantilla manual", datas, roster, body.get("side_overrides"), body.get("params"))
+        demo_summaries = {d["match_info"]["match_id"]: demo.summary(con, d["match_info"]["match_id"]) for d in datas}
+        out = report.run(team or "Plantilla manual", datas, roster, body.get("side_overrides"), body.get("params"), demo_summaries)
         out["load_errors"] = errors
         out["roster_size"] = len(roster)
         return out

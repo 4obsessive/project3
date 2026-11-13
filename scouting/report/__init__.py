@@ -41,7 +41,7 @@ def _load_all():
 
 # ------------------------------------------------------------------ contexto
 class MatchCtx:
-    def __init__(self, data, our, side_source, roster_counts):
+    def __init__(self, data, our, side_source, roster_counts, demo_summary=None):
         self.data = data
         self.mi = data["match_info"]
         self.id = self.mi["match_id"]
@@ -53,6 +53,13 @@ class MatchCtx:
         self.won = self.mi.get("winning_team") == our
         self._deaths = None
         self._objs = None
+        self._demo = demo_summary
+
+    @property
+    def demo(self):
+        """Resumen del demo de la partida o None si no hay datos (state != done)."""
+        d = self._demo
+        return d if isinstance(d, dict) and d.get("state") == "done" else None
 
     @property
     def deaths(self):
@@ -90,6 +97,16 @@ class ReportCtx:
     def finding(self, kind, text, support=None, total=None):
         """kind: strength | weakness | pattern | improve | opportunity"""
         self.findings.append({"kind": kind, "text": text, "support": support, "total": total})
+
+    @property
+    def demo_n(self):
+        return sum(1 for m in self.matches if m.demo)
+
+    def demo_coverage(self):
+        """Bloque de texto con cuántas partidas analizadas tienen datos del demo."""
+        k = self.demo_n
+        return {"type": "text", "tone": "confirmed" if k == self.n else "warning",
+                "text": f"Datos del demo en {k} de {self.n} partidas."}
 
     def sample_warning(self, n=None, what="partidas"):
         n = self.n if n is None else n
@@ -133,9 +150,10 @@ def detect_side(mi, roster):
 
 
 # ------------------------------------------------------------------- run
-def run(team, match_datas, roster, side_overrides=None, params=None):
+def run(team, match_datas, roster, side_overrides=None, params=None, demo_summaries=None):
     _load_all()
     params = dict({"midboss_window_s": 90, "normalize": True}, **(params or {}))
+    demo_summaries = demo_summaries or {}
     side_overrides = {int(k): int(v) for k, v in (side_overrides or {}).items() if v in (0, 1, "0", "1")}
     ctxs, skipped, sides = [], [], []
     for d in match_datas:
@@ -150,7 +168,7 @@ def run(team, match_datas, roster, side_overrides=None, params=None):
         if our is None:
             skipped.append({"match_id": mid, "reason": "No se pudo detectar el lado (ningún jugador de la plantilla o empate). Elige el lado a mano."})
             continue
-        ctxs.append(MatchCtx(d, our, src, counts))
+        ctxs.append(MatchCtx(d, our, src, counts, demo_summaries.get(mid)))
     ctx = ReportCtx(team, ctxs, params, skipped)
     sections = []
     conclusions = None
