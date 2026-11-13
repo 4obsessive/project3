@@ -45,6 +45,14 @@ class Summarize(unittest.TestCase):
         self.assertEqual([x["completed_by"] for x in k], [1, 0, 0])
         self.assertEqual(round(k[0]["start_t"]), 740)
         self.assertEqual(round(k[0]["completed_t"]), 758)
+        # Los curtime koth_* ya excluyen el tiempo pausado (1626 ticks antes del #2): no se restan otra vez.
+        self.assertEqual((k[1]["start_t"], k[1]["completed_t"]), (round(1184.875 - 47.5625), round(1206.0625 - 47.5625)))
+        self.assertEqual((k[1]["start_t"], k[1]["completed_t"]), (1137, 1158))
+        self.assertEqual((k[2]["start_t"], k[2]["completed_t"]), (1596, 1603))
+
+    def test_curtime_ignores_paused_ticks(self):
+        rules = [{"tick": 0, "paused_ticks": 1626, "game_start": 47.5625}]
+        self.assertEqual(demo.game_seconds_from_curtime(1184.875, 10, rules), 1184.875 - 47.5625)
 
     def test_koth_not_completed(self):
         inf = 3.4028235e38
@@ -68,6 +76,18 @@ class Summarize(unittest.TestCase):
         self.assertIsNone(m["initiator"])
         self.assertIsNone(m["stolen"])
         self.assertEqual(m["rejuv"], {"0": 3, "1": 0})
+        # Sin daño capturado: dato ausente, no ceros.
+        self.assertIsNone(m["damage"])
+
+    def test_rejuv_cluster_on_damage_entity_stolen(self):
+        # El equipo 3 (API 1) hace el daño; el cúmulo de rejuvenators lo coge el 2 (API 0) -> robado.
+        midboss = [{"victim": 7, "team": 3, "dmg": 12000, "t0": 3000, "t1": 6400}]
+        rejuv = [{"tick": 6400 + 64 * 5 + i, "killing_team": 2, "user_team": 2} for i in range(3)]
+        m = demo.summarize({"rejuv": rejuv, "rules": [], "midboss": midboss})["midboss"]
+        self.assertEqual(len(m), 1)
+        self.assertEqual(m[0]["damage"], {"0": 0, "1": 12000})
+        self.assertEqual((m[0]["initiator"], m[0]["killer"]), (1, 0))
+        self.assertIs(m[0]["stolen"], True)
 
     def test_initiator_is_higher_damage_team(self):
         # El equipo 2 (API 0) golpea primero pero hace menos daño; el 3 (API 1) inicia y el 2 roba.
@@ -206,6 +226,64 @@ class Worker(unittest.TestCase):
         for c in self.op.calls:
             h = {k.lower(): v for k, v in c["headers"].items()}
             self.assertEqual(h["user-agent"], "deadlock-scouting-local/1.0")
+
+    def test_worker_stores_raw_results(self):
+        w = self.mk()
+        demo.enqueue(self.con, 135801973)
+        w.step()
+        raw = self.con.execute("SELECT raw FROM demo_jobs WHERE match_id=135801973").fetchone()[0]
+        self.assertEqual(json.loads(raw)["rules"], self.fixture["results"]["rules"])
+
+    def test_summary_resummarized_when_version_old(self):
+        res = self.fixture["results"]
+        viejo = {"version": demo.SUMMARY_VERSION - 1, "midboss": [], "koth": []}
+        with self.con:
+            self.con.execute("INSERT INTO demo_jobs(match_id, state, summary, raw, updated_at) VALUES(5, 'done', ?, ?, 0)",
+                             (json.dumps(viejo), json.dumps(res)))
+        s = demo.summary(self.con, 5)
+        self.assertEqual(s["version"], demo.SUMMARY_VERSION)
+        self.assertEqual(s["koth"], demo.summarize(res)["koth"])
+        guardado = json.loads(self.con.execute("SELECT summary FROM demo_jobs WHERE match_id=5").fetchone()[0])
+        self.assertEqual(guardado["version"], demo.SUMMARY_VERSION)
+
+    def test_install_requeues_done_without_raw(self):
+        with self.con:
+            self.con.execute("INSERT INTO demo_jobs(match_id, state, summary, updated_at) VALUES(5, 'done', '{\"version\":1}', 0)")
+            self.con.execute("INSERT INTO demo_jobs(match_id, state, summary, raw, updated_at) VALUES(6, 'done', '{}', '{}', 0)")
+        demo.install(self.con, start_worker=False)
+        estados = dict(self.con.execute("SELECT match_id, state FROM demo_jobs").fetchall())
+        self.assertEqual(estados, {5: "pending", 6: "done"})
+
+    def test_raw_column_migration_on_old_table(self):
+        import sqlite3
+        path = os.path.join(self.tmp.name, "viejo.db")
+        c = sqlite3.connect(path)
+        c.execute("CREATE TABLE demo_jobs (match_id INTEGER PRIMARY KEY, state TEXT NOT NULL, summary TEXT, error TEXT, "
+                  "attempts INTEGER NOT NULL DEFAULT 0, next_try INTEGER NOT NULL DEFAULT 0, updated_at INTEGER)")
+        c.commit()
+        c.close()
+        con = db.connect(path)
+        self.addCleanup(con.close)
+        cols = [r[1] for r in con.execute("PRAGMA table_info(demo_jobs)")]
+        self.assertIn("raw", cols)
+        db.connect(path).close()  # idempotente
+
+    def test_summarize_crash_is_fatal(self):
+        w = self.mk()
+        old = demo.summarize
+        demo.summarize = lambda res: 1 / 0
+        self.addCleanup(setattr, demo, "summarize", old)
+        demo.enqueue(self.con, 7)
+        w.step()
+        r = self.con.execute("SELECT state, attempts FROM demo_jobs").fetchone()
+        self.assertEqual(r["state"], "error")
+
+    def test_truncated_result_rejected(self):
+        # Un frame cortado descomprime sin error a b"" (0 filas): debe rechazarse, no tomarse por un resultado vacío.
+        comp = zstd.compress(b"".join(json.dumps({"a": i}).encode() + b"\n" for i in range(3000)))
+        self.assertEqual(len(demo.DemoClient._parse(comp)), 3000)
+        with self.assertRaises(demo.DemoError):
+            demo.DemoClient._parse(comp[:-1])
 
     def test_nodemo_404_not_retried(self):
         w = self.mk("404")
@@ -351,7 +429,9 @@ class ReportWithDemo(unittest.TestCase):
         def mi(a, b):
             return {"players": [{"team": 0, "stats": [{"time_stamp_s": 60, "net_worth": a}]},
                                 {"team": 1, "stats": [{"time_stamp_s": 60, "net_worth": b}]}]}
-        self.assertIsNone(matches.comeback_team_at(mi(9000, 10000), 100))
+        self.assertEqual(matches.comeback_team_at(mi(9000, 10000), 100), matches.NO_COMEBACK)
+        self.assertIsNone(matches.comeback_team_at({"players": [{"team": 0, "stats": []}, {"team": 1, "stats": []}]}, 100))
+        self.assertIsNone(matches.comeback_team_at(mi(9000, 10000), None))
         self.assertEqual(matches.comeback_team_at(mi(8999, 10000), 100), 0)
         self.assertEqual(matches.comeback_team_at(mi(10000, 8999), 100), 1)
 
@@ -386,6 +466,51 @@ class ReportWithDemo(unittest.TestCase):
         self.assertEqual(detail["n"], 1)
         self.assertEqual([r["completa"] for r in detail["rows"]], ["Este equipo", "Rival", "No completado"])
         self.assertTrue(all(r["remontada"] in ("sí", "no", "—") for r in detail["rows"]))
+
+    def _remontadas(self, data, summ):
+        out = report.run("Prueba", [data], set(), side_overrides={109084310: self.OUR}, demo_summaries={109084310: summ})
+        secs = {s["id"]: s for s in out["sections"]}
+        res = {}
+        for sid in ("midboss", "koth"):
+            tab = next(b for b in secs[sid]["blocks"] if b["type"] == "table" and any(c["key"] == "remontada" for c in b["columns"]))
+            texts = " ".join(b.get("text", "") for b in secs[sid]["blocks"])
+            res[sid] = ([r["remontada"] for r in tab["rows"]], tab["rows"], texts)
+        return res
+
+    def test_comeback_known_vs_unknown(self):
+        import copy
+        s = self.summary()
+        known = self._remontadas(self.data, s)
+        # Con muestras de net worth y equipo que lo mata/completa: «sí» o «no», nunca «—».
+        self.assertTrue(all(v in ("sí", "no") for v in known["midboss"][0]))
+        self.assertEqual([v in ("sí", "no") for v in known["koth"][0]], [True, True, False])
+        sin = copy.deepcopy(self.data)
+        for p in sin["match_info"]["players"]:
+            p["stats"] = []
+        unknown = self._remontadas(sin, s)
+        self.assertEqual(unknown["midboss"][0], ["—"] * 3)
+        self.assertEqual(unknown["koth"][0], ["—"] * 3)
+
+    def test_comeback_text_says_net_worth(self):
+        res = self._remontadas(self.data, self.summary())
+        for sid in ("midboss", "koth"):
+            self.assertIn("net worth (interpolado de las muestras de la partida) < 0,9 × el del rival (regla del 10 %)", res[sid][2])
+            self.assertNotIn("almas del rival", res[sid][2])
+
+    def test_midboss_without_damage_is_missing_not_zero(self):
+        s = self.summary()
+        s["midboss"][2]["damage"] = None
+        rows = self._remontadas(self.data, s)["midboss"][1]
+        self.assertIsNone(rows[2]["dano_nuestro"])
+        self.assertIsNone(rows[2]["dano_rival"])
+
+    def test_event_without_time_is_dash(self):
+        s = self.summary()
+        s["midboss"][0]["t"] = None
+        s["koth"][0]["start_t"] = None
+        res = self._remontadas(self.data, s)
+        self.assertEqual(res["midboss"][0][0], "—")
+        self.assertEqual(res["koth"][0][0], "—")
 
     def test_koth_without_demo(self):
         sec = self.run_report({})["koth"]

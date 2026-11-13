@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS demo_jobs (
     match_id INTEGER PRIMARY KEY,
     state TEXT NOT NULL,             -- pending | done | nodemo | error
     summary TEXT, error TEXT,
+    raw TEXT,                        -- resultados crudos de las consultas (JSON), para rehacer el resumen
     attempts INTEGER NOT NULL DEFAULT 0,
     next_try INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER
@@ -153,8 +154,17 @@ def connect(path=None):
     with _init_lock:
         if path not in _initialized:
             con.executescript(SCHEMA)
+            _migrate(con)
             _initialized.add(path)
     return con
+
+
+def _migrate(con):
+    """Columnas añadidas después de crear la tabla en BD existentes (idempotente)."""
+    cols = {r[1] for r in con.execute("PRAGMA table_info(demo_jobs)")}
+    if "raw" not in cols:
+        with con:
+            con.execute("ALTER TABLE demo_jobs ADD COLUMN raw TEXT")
 
 
 def get(path=None):

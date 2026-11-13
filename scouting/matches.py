@@ -375,7 +375,8 @@ def economy(mi):
     for tm in (0, 1):
         plist = [p for p in ps if p.get("team") == tm]
         teams[str(tm)] = {"sources": sources(plist), "per_min": _rates(plist, 0, dur),
-                          "per_phase": [_rates(plist, a, b) for a, b in phases]}
+                          # una fase cortada por el final se divide entre lo jugado, no entre su duración completa
+                          "per_phase": [_rates(plist, a, min(b, dur)) for a, b in phases]}
     players_out = [{"slot": p.get("player_slot"), "team": p.get("team"), "sources": sources([p]), "per_min": _rates([p], 0, dur)}
                    for p in sorted(ps, key=lambda p: (p.get("team"), p.get("player_slot")))]
     return {"phases": phases, "teams": teams, "players": players_out,
@@ -383,23 +384,35 @@ def economy(mi):
 
 
 COMEBACK_RATIO = 0.9
+# Hay muestras de net worth y ningún equipo está en remontada (distinto de None = sin datos).
+NO_COMEBACK = -1
+
+
+def _has_networth(mi, team):
+    return any(s.get("net_worth") is not None for p in mi.get("players") or [] if p.get("team") == team
+               for s in p.get("stats") or [])
 
 
 def comeback_team_at(mi, t):
-    """Equipo en remontada en el segundo t (regla del 10 %: net worth < 0,9 × el del rival), o None si ninguno."""
+    """Equipo en remontada en el segundo t (regla del 10 %: net worth < 0,9 × el del rival).
+
+    Devuelve 0 o 1; NO_COMEBACK si ninguno lo está; None si no se puede saber (sin segundo o sin muestras de net worth)."""
+    if t is None or not all(_has_networth(mi, tm) for tm in (0, 1)):
+        return None
     nw = {tm: team_networth_at(mi, tm, t) for tm in (0, 1)}
     for tm in (0, 1):
         if nw[tm] < COMEBACK_RATIO * nw[1 - tm]:
             return tm
-    return None
+    return NO_COMEBACK
 
 
 def comeback_flags(mi, demo):
-    """Equipo en remontada (o None) en cada midboss y cada cash-in del KOTH del demo; None si el demo no está listo."""
+    """comeback_team_at en cada midboss y cada cash-in del KOTH del demo (0/1, NO_COMEBACK o None = sin datos);
+    None si el demo no está listo."""
     if not demo or demo.get("state") != "done":
         return None
-    return {"midboss": [comeback_team_at(mi, e["t"]) if e.get("t") is not None else None for e in demo.get("midboss") or []],
-            "koth": [comeback_team_at(mi, e["start_t"]) if e.get("start_t") is not None else None for e in demo.get("koth") or []]}
+    return {"midboss": [comeback_team_at(mi, e.get("t")) for e in demo.get("midboss") or []],
+            "koth": [comeback_team_at(mi, e.get("start_t")) for e in demo.get("koth") or []]}
 
 
 def custom_stat_id(mi, name):

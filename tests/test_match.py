@@ -337,6 +337,16 @@ class Economy(unittest.TestCase):
             self.assertTrue(all(v is None for v in t["per_phase"][2].values()))
             self.assertTrue(all(v is not None for v in t["per_phase"][1].values()))
 
+    def test_partial_phase_uses_played_time(self):
+        # Partida de 1000 s: la fase 10-20 solo dura 400 s; el ritmo se divide entre lo jugado, no entre 600 s.
+        import copy
+        mi = copy.deepcopy(self.mi)
+        mi["duration_s"] = 1000
+        eco = M.economy(mi)
+        for tm in (0, 1):
+            plist = [p for p in mi["players"] if p.get("team") == tm]
+            self.assertEqual(eco["teams"][str(tm)]["per_phase"][1], M._rates(plist, 600, 1000))
+
     def test_comeback_flags(self):
         self.assertIsNone(M.comeback_flags(self.mi, {"state": "pending"}))
         demo = {"state": "done", "midboss": [{"t": 1198}, {"t": 1500}], "koth": [{"start_t": 740}]}
@@ -344,7 +354,15 @@ class Economy(unittest.TestCase):
         self.assertEqual(len(fl["midboss"]), 2)
         self.assertEqual(fl["midboss"][0], M.comeback_team_at(self.mi, 1198))
         self.assertEqual(fl["koth"], [M.comeback_team_at(self.mi, 740)])
-        self.assertTrue(all(v in (None, 0, 1) for v in fl["midboss"] + fl["koth"]))
+        self.assertTrue(all(v in (None, M.NO_COMEBACK, 0, 1) for v in fl["midboss"] + fl["koth"]))
+
+    def test_comeback_flags_without_networth_samples(self):
+        import copy
+        mi = copy.deepcopy(self.mi)
+        for p in mi["players"]:
+            p["stats"] = []
+        fl = M.comeback_flags(mi, {"state": "done", "midboss": [{"t": 1198}], "koth": [{"start_t": 740}]})
+        self.assertEqual(fl, {"midboss": [None], "koth": [None]})
 
 
 if __name__ == "__main__":

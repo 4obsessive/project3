@@ -1,10 +1,6 @@
 """KOTH / Rifts: cash-ins del demo de cada partida, quién los completa y si estaba en remontada."""
 from .. import metric
-from ... import matches as M
-
-
-def _yn(v):
-    return "—" if v is None else ("sí" if v else "no")
+from .m04_midboss import REGLA, _remontada
 
 
 @metric("koth", "KOTH / Rifts", order=50)
@@ -22,11 +18,10 @@ def koth(ctx):
             continue
         for e in d.get("koth") or []:
             by = e.get("completed_by")
-            cb = M.comeback_team_at(m.mi, e.get("start_t") or 0)
             rows.append({
                 "match_id": m.id, "n": e.get("n"), "start_t": e.get("start_t"), "completed_t": e.get("completed_t"),
                 "completa": {"us": "Este equipo", "them": "Rival"}.get(m.rel(by), "No completado"),
-                "remontada": "—" if by is None else _yn(cb == by),
+                "remontada": _remontada(m.mi, e.get("start_t"), by),
             })
     if not rows:
         return [cov, {"type": "unavailable", "title": title, "reason": "Los demos analizados no registran ningún KOTH."}]
@@ -35,7 +30,7 @@ def koth(ctx):
     none = [r for r in rows if r["completa"] == "No completado"]
     return [cov,
             {"type": "text", "tone": "info",
-             "text": "Remontada: el equipo que completa el KOTH tenía menos del 90 % de las almas del rival al empezar (regla del 10 %: un equipo con menos del 90 % de las almas del rival tiene resistencias de remontada)."},
+             "text": f"Remontada: el equipo que completa el KOTH tenía {REGLA} al empezar el cash-in; «—» si no hay muestras de net worth."},
             {"type": "text", "tone": "confirmed",
              "text": f"{len(rows)} KOTH en {k} partidas con demo: completados por este equipo {len(us)} "
                      f"({sum(1 for r in us if r['remontada'] == 'sí')} en remontada), por el rival {len(them)} "

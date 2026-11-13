@@ -4,6 +4,8 @@ from collections import Counter
 from .. import metric, stats
 from ... import matches as M
 
+REGLA = "net worth (interpolado de las muestras de la partida) < 0,9 × el del rival (regla del 10 %)"
+
 
 @metric("midboss", "Midboss", order=40)
 def midboss(ctx):
@@ -17,16 +19,21 @@ def midboss(ctx):
             matches_with += 1
             first_by[m.rel(mb[0]["team_killed"])] += 1
         for e in mb:
-            t = e["t"] or 0
-            k_us = sum(1 for d in m.deaths if d["killer_team"] == m.our and d["victim_team"] == m.their and t - win <= (d["t"] or 0) <= t)
-            k_them = sum(1 for d in m.deaths if d["killer_team"] == m.their and d["victim_team"] == m.our and t - win <= (d["t"] or 0) <= t)
-            cum_us = sum(1 for d in m.deaths if d["killer_team"] == m.our and d["victim_team"] == m.their and (d["t"] or 0) <= t)
-            cum_them = sum(1 for d in m.deaths if d["killer_team"] == m.their and d["victim_team"] == m.our and (d["t"] or 0) <= t)
-            nw = M.team_networth_at(m.mi, m.our, t) - M.team_networth_at(m.mi, m.their, t)
+            t = e["t"]
+            if t is None:  # sin segundo: nada que contar en la ventana (dato ausente, no 0)
+                k_us = k_them = kill_adv = nw_adv = None
+            else:
+                dt = [d for d in m.deaths if d["t"] is not None]
+                k_us = sum(1 for d in dt if d["killer_team"] == m.our and d["victim_team"] == m.their and t - win <= d["t"] <= t)
+                k_them = sum(1 for d in dt if d["killer_team"] == m.their and d["victim_team"] == m.our and t - win <= d["t"] <= t)
+                cum_us = sum(1 for d in dt if d["killer_team"] == m.our and d["victim_team"] == m.their and d["t"] <= t)
+                cum_them = sum(1 for d in dt if d["killer_team"] == m.their and d["victim_team"] == m.our and d["t"] <= t)
+                kill_adv = cum_us - cum_them
+                nw_adv = round(M.team_networth_at(m.mi, m.our, t) - M.team_networth_at(m.mi, m.their, t))
             events.append({
                 "match_id": m.id, "n": e["n"], "t": t, "killer": m.rel(e["team_killed"]), "claimer": m.rel(e["team_claimed"]),
-                "kills_us": k_us, "kills_them": k_them, "kill_adv": cum_us - cum_them,
-                "nw_adv": round(nw), "won": m.won,
+                "kills_us": k_us, "kills_them": k_them, "kill_adv": kill_adv,
+                "nw_adv": nw_adv, "won": m.won,
             })
     n = ctx.n
     blocks = [ctx.sample_warning(),
@@ -50,7 +57,8 @@ def midboss(ctx):
                                {"key": "mediana", "label": "Mediana", "fmt": "mmss"}, {"key": "min", "label": "Mín.", "fmt": "mmss"}, {"key": "max", "label": "Máx.", "fmt": "mmss"}],
                    "rows": rows})
     blocks.append({"type": "histogram", "title": "Minuto del Midboss", "bin_s": 120, "n": n,
-                   "series": [{"name": "Este equipo", "side": "us", "values": [e["t"] for e in ours]}, {"name": "Rival", "side": "them", "values": [e["t"] for e in theirs]}]})
+                   "series": [{"name": "Este equipo", "side": "us", "values": [e["t"] for e in ours if e["t"] is not None]},
+                              {"name": "Rival", "side": "them", "values": [e["t"] for e in theirs if e["t"] is not None]}]})
     scen = []
     for label, evs in (("Cuando lo mata este equipo", ours), ("Cuando lo mata el rival", theirs)):
         if not evs:
@@ -89,6 +97,14 @@ def _yn(v):
     return "—" if v is None else ("sí" if v else "no")
 
 
+def _remontada(mi, t, team):
+    """«sí»/«no» si el equipo `team` estaba en remontada en t; «—» si falta el equipo, el segundo o el net worth."""
+    if team is None:
+        return "—"
+    cb = M.comeback_team_at(mi, t)
+    return "—" if cb is None else _yn(cb == team)
+
+
 def _demo_blocks(ctx):
     k = ctx.demo_n
     cov = ctx.demo_coverage()
@@ -117,7 +133,7 @@ def _demo_blocks(ctx):
                 "iniciador": {"us": "Este equipo", "them": "Rival"}.get(m.rel(e.get("initiator")), "—"),
                 "robado": _yn(e.get("stolen")),
                 "rejuv_nuestros": rj.get(str(m.our)), "rejuv_rival": rj.get(str(m.their)),
-                "remontada": "—" if kt is None else _yn(M.comeback_team_at(m.mi, e.get("t") or 0) == kt),
+                "remontada": _remontada(m.mi, e.get("t"), kt),
             })
     out = [cov]
     if not rows:
@@ -126,7 +142,7 @@ def _demo_blocks(ctx):
         return out
     out.append({"type": "text", "tone": "info",
                 "text": "Iniciador: el equipo que más daño hizo al Midboss. Robado: lo mata el equipo que no lo inició (solo si hay daño registrado). "
-                        "Remontada: el equipo que lo mata tenía menos del 90 % de las almas del rival (regla del 10 %: un equipo con menos del 90 % de las almas del rival tiene resistencias de remontada)."})
+                        f"Remontada: el equipo que lo mata tenía {REGLA} en ese segundo; «—» si no hay muestras de net worth."})
     n_mb = len(rows)
     out.append({"type": "text", "tone": "confirmed",
                 "text": f"Rejuvenators cogidos en {n_mb} Midboss: este equipo {taken_us} (media {taken_us / n_mb:.1f} por Midboss), rival {taken_them} (media {taken_them / n_mb:.1f}). "

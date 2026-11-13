@@ -21,7 +21,8 @@ UNAVAILABLE_REASON = "no disponible: requiere Python 3.14+"
 TICK_RATE = 64
 # El demo numera los equipos 2 y 3; la API de partidas usa 0 y 1.
 TEAM_TO_API = {2: 0, 3: 1}
-SUMMARY_VERSION = 1
+# 2: KOTH sin restar dos veces las pausas; Midboss sin daño capturado -> damage None.
+SUMMARY_VERSION = 2
 # Ventana tras el último daño al Midboss en la que un rejuvenator cuenta como suyo.
 KILL_WINDOW_S = 30
 # Rejuvenators del mismo equipo separados menos de esto pertenecen al mismo Midboss.
@@ -51,11 +52,13 @@ def game_seconds_from_tick(tick, rules):
 
 
 def game_seconds_from_curtime(curtime, tick, rules):
-    """Segundos de partida de un valor curtime (columnas koth_*) observado en `tick`."""
+    """Segundos de partida de un valor curtime (columnas koth_*) observado en `tick`.
+
+    El curtime ya excluye el tiempo en pausa, así que solo se resta el inicio de la partida."""
     fila = _fila_vigente(tick, rules)
     if fila is None:
         return float(curtime)
-    return curtime - fila["game_start"] - (fila.get("paused_ticks") or 0) / TICK_RATE
+    return curtime - fila["game_start"]
 
 
 def _api(team):
@@ -115,14 +118,15 @@ def _midboss(results, rules):
             if 0 <= primero - e["t_tick"] <= KILL_WINDOW_S * TICK_RATE:
                 destino = e
         if destino is None:
-            sueltos.append({"t_tick": primero, "damage": {"0": 0, "1": 0}, "initiator": None,
+            # Sin daño capturado: el daño es un dato ausente (None), no 0.
+            sueltos.append({"t_tick": primero, "damage": None, "initiator": None,
                             "killer": _api(c["team"]), "rejuv_rows": c["rows"]})
         else:
             destino["rejuv_rows"].extend(c["rows"])
             destino["killer"] = _api(c["team"])
 
     # Sin daño en ningún equipo y sin rejuvenators: no es un Midboss real.
-    entradas = [e for e in lista if sum(e["damage"].values()) > 0 or e["rejuv_rows"]] + sueltos
+    entradas = [e for e in lista if sum(e["damage"].values()) > 0 or e["rejuv_rows"]] + sueltos  # lista: damage siempre dict
     entradas.sort(key=lambda x: x["t_tick"])
 
     salida = []
@@ -305,6 +309,8 @@ class DemoClient:
             crudo = dec.decompress(raw, max_length=MAX_DECOMPRESSED + 1)
             if len(crudo) > MAX_DECOMPRESSED:
                 raise DemoError("resultado descomprimido demasiado grande")
+            if not dec.eof:
+                raise DemoError("resultado truncado")
             texto = crudo.decode("utf-8")
             return [json.loads(l) for l in texto.splitlines() if l.strip()]
         except (ValueError, zstd.ZstdError) as e:
@@ -312,6 +318,10 @@ class DemoClient:
 
 
 # ------------------------------------------------------------------ cola
+def _json(obj):
+    return json.dumps(obj, separators=(",", ":"))
+
+
 def enqueue(con, match_id):
     """Encola una partida como `pending` si aún no tiene fila (no toca done/nodemo)."""
     with con:
@@ -323,11 +333,17 @@ def summary(con, match_id):
     """Estado del demo de una partida: resumen si está listo; si no, estado y motivo."""
     if not AVAILABLE:
         return {"state": "unavailable", "reason": UNAVAILABLE_REASON}
-    r = con.execute("SELECT state, summary, error FROM demo_jobs WHERE match_id=?", (int(match_id),)).fetchone()
+    r = con.execute("SELECT state, summary, raw, error FROM demo_jobs WHERE match_id=?", (int(match_id),)).fetchone()
     if r is None:
         return {"state": "pending", "reason": "aún sin consultar"}
     if r["state"] == "done" and r["summary"]:
-        return {"state": "done", **json.loads(r["summary"])}
+        s = json.loads(r["summary"])
+        if s.get("version") != SUMMARY_VERSION and r["raw"]:
+            # Resumen de una versión anterior: se rehace desde las filas crudas guardadas y se persiste.
+            s = summarize(json.loads(r["raw"]))
+            with con:
+                con.execute("UPDATE demo_jobs SET summary=? WHERE match_id=?", (_json(s), int(match_id)))
+        return {"state": "done", **s}
     if r["state"] == "nodemo":
         return {"state": "nodemo", "reason": "la API no tiene el demo de esta partida"}
     if r["state"] == "error":
@@ -391,7 +407,11 @@ class Worker:
     def _procesar(self, con, t, mid, intentos):
         try:
             res = self.client.run_queries(mid)
-            self._marcar(con, mid, "done", summary=json.dumps(summarize(res), separators=(",", ":")), error=None)
+            try:
+                resumen = summarize(res)
+            except Exception as e:  # determinista: reintentar solo gastaría presupuesto
+                raise DemoFatal(f"no se pudo resumir el demo: {e!r}")
+            self._marcar(con, mid, "done", summary=_json(resumen), raw=_json(res), error=None)
         except NoDemo:
             self._marcar(con, mid, "nodemo", error=None)
         except RateLimited:
@@ -443,6 +463,9 @@ def install(con, api_key="", start_worker=True):
     with con:
         con.execute("INSERT OR IGNORE INTO demo_jobs(match_id, state, updated_at) "
                     "SELECT match_id, 'pending', ? FROM matches", (_db_now(),))
+        # Filas `done` de antes de guardar las filas crudas: se vuelven a consultar (una vez) con el resumen corregido.
+        con.execute("UPDATE demo_jobs SET state='pending', attempts=0, next_try=0, updated_at=? "
+                    "WHERE state='done' AND raw IS NULL", (_db_now(),))
     if not (AVAILABLE and start_worker):
         return None
     w = Worker(db.get, DemoClient(api_key=api_key))
