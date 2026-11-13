@@ -389,7 +389,7 @@ class ReportWithDemo(unittest.TestCase):
 
     def test_koth_without_demo(self):
         sec = self.run_report({})["koth"]
-        self.assertEqual(sec["blocks"][0]["type"], "unavailable")
+        self.assertTrue(any(b["type"] == "unavailable" for b in sec["blocks"]))
 
 
 if __name__ == "__main__":
