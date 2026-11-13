@@ -53,10 +53,13 @@ export async function render(root, ctx) {
 
 async function showMatch(root, id, ctx) {
   clearTimeout(demoTimer); demoTimer = null;
+  const gen = ++matchGen;
   root.innerHTML = ''; root.append(spinner('Cargando partida…'));
   let m;
-  try { m = await api.get(`/api/matches/${id}`); } catch (e) { root.innerHTML = ''; root.append(errorBox(e.message, () => showMatch(root, id, ctx), 'No se pudo cargar la partida')); return; }
+  try { m = await api.get(`/api/matches/${id}`); } catch (e) { if (gen !== matchGen) return; root.innerHTML = ''; root.append(errorBox(e.message, () => showMatch(root, id, ctx), 'No se pudo cargar la partida')); return; }
+  if (gen !== matchGen) return;
   try { const hs = await getHeroes(); heroById = new Map(hs.map(h => [h.id, h])); } catch { heroById = new Map(); }
+  if (gen !== matchGen) return; // otra partida se abrió mientras tanto
   root.innerHTML = '';
   const TN = m.team_names;
   const tname = t => `${TN[t]} (${t})`;
@@ -103,13 +106,14 @@ async function showMatch(root, id, ctx) {
 
 let heroById = new Map();
 let demoTimer = null;
+let matchGen = 0;
 /** Mientras el demo está pendiente, recarga la vista cada 20 s; se detiene al salir de la partida. */
 function scheduleDemoRefresh(root, id, ctx, m) {
   clearTimeout(demoTimer); demoTimer = null;
   if (m.demo?.state !== 'pending') return;
   demoTimer = setTimeout(() => {
     demoTimer = null;
-    if (!root.isConnected || !location.hash.startsWith(`#partidas/${id}`)) return;
+    if (!root.isConnected || (location.hash.slice(1).split(/[/?]/)[0] !== 'partidas' || location.hash.slice(1).split(/[/?]/)[1] !== String(id))) return;
     showMatch(root, id, ctx);
   }, 20000);
 }
