@@ -135,7 +135,7 @@ def detect_side(mi, roster):
 # ------------------------------------------------------------------- run
 def run(team, match_datas, roster, side_overrides=None, params=None):
     _load_all()
-    params = dict({"midboss_window_s": 90, "normalize": True, "nw_margin": 3000}, **(params or {}))
+    params = dict({"midboss_window_s": 90, "normalize": True}, **(params or {}))
     side_overrides = {int(k): int(v) for k, v in (side_overrides or {}).items() if v in (0, 1, "0", "1")}
     ctxs, skipped, sides = [], [], []
     for d in match_datas:

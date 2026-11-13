@@ -5,14 +5,13 @@ import { heroPortrait } from '../art.js';
 
 export async function render(root, ctx) {
   const teams = await api.get('/api/teams');
-  const saved = store.get('report', { team: '', extra: '', ids: '', window: 90, normalize: true, margin: 3000 });
+  const saved = store.get('report', { team: '', extra: '', ids: '', window: 90, normalize: true });
   if (ctx.query.team) saved.team = ctx.query.team;
   const teamSel = el('select', {}, el('option', { value: '' }, '— solo cuentas extra —'), teams.map(t => el('option', { value: t.team, selected: t.team === saved.team }, `${t.team} (${t.players.length})`)));
   const extra = el('input', { value: saved.extra, placeholder: 'cuentas extra separadas por comas', style: { minWidth: '280px' } });
   const ids = el('textarea', { 'aria-label': 'IDs de partida', placeholder: 'IDs de partida (uno por línea o separados por comas)' }, saved.ids);
   const win = el('input', { type: 'number', value: saved.window, min: 10, max: 600, style: { width: '70px' } });
   const norm = el('input', { type: 'checkbox', checked: saved.normalize });
-  const margin = el('input', { type: 'number', value: saved.margin, min: 0, step: 500, style: { width: '80px' } });
   const minP = el('input', { type: 'number', value: 3, min: 1, max: 6, style: { width: '50px' } });
   const days = el('input', { type: 'number', value: 60, min: 1, max: 365, style: { width: '60px' } });
   const recentBox = el('div');
@@ -20,7 +19,7 @@ export async function render(root, ctx) {
   let overrides = {};
 
   const parseIds = () => [...new Set(ids.value.split(/[\s,;]+/).map(x => x.trim()).filter(x => /^\d+$/.test(x)))];
-  const persist = () => store.set('report', { team: teamSel.value, extra: extra.value, ids: ids.value, window: +win.value, normalize: norm.checked, margin: +margin.value });
+  const persist = () => store.set('report', { team: teamSel.value, extra: extra.value, ids: ids.value, window: +win.value, normalize: norm.checked });
 
   async function findRecent() {
     recentBox.innerHTML = ''; recentBox.append(spinner('Buscando en el historial de partidas de la plantilla…'));
@@ -51,7 +50,7 @@ export async function render(root, ctx) {
     try {
       const r = await api.post('/api/report', {
         team: teamSel.value, extra_accounts: extra.value.split(/[\s,;]+/).filter(Boolean), match_ids: list, side_overrides: overrides,
-        params: { midboss_window_s: +win.value, normalize: norm.checked, nw_margin: +margin.value },
+        params: { midboss_window_s: +win.value, normalize: norm.checked },
       });
       show(r);
     } catch (e) { out.innerHTML = ''; out.append(errorBox(e.message, run, 'No se pudo generar el informe')); }
@@ -111,6 +110,5 @@ export async function render(root, ctx) {
     el('div', { class: 'row', style: { marginTop: '8px' } },
       el('label', {}, 'Ventana de kills antes del Midboss (s)', win),
       el('label', {}, norm, 'normalizar lado (base propia abajo)'),
-      el('label', {}, 'Margen de net worth para «ventaja»', margin),
       el('button', { class: 'primary', onclick: () => { overrides = {}; run(); } }, 'Generar informe'))), out);
 }

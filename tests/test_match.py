@@ -159,6 +159,11 @@ class SideAndReport(unittest.TestCase):
                     for r in b["rows"]:
                         self.assertNotEqual(r.get("tipo"), "interpretación")
 
+        concl = next(s for s in out["sections"] if s["id"] == "conclusiones")
+        texts = " ".join(str(r.get("texto", "")) for b in concl["blocks"] if b["type"] == "table" for r in b["rows"])
+        for frag in ("Revisar el posicionamiento", "Reforzar el", "descuidado"):
+            self.assertNotIn(frag, texts)
+
     def test_our_heroes(self):
         out = report.run("Prueba", [self.data], self.team1)
         heroes = out["our_heroes"]
