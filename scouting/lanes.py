@@ -1,5 +1,6 @@
 """Línea de cada jugador en la fase de líneas, deducida de sus posiciones (no de assigned_lane)."""
 import json
+import math
 import os
 import statistics
 
@@ -41,10 +42,13 @@ def assign_lanes(mi, paths):
     Si algún jugador no tiene posiciones vivas o no hay exactamente 2 por equipo y línea,
     todas las líneas son None (la deducción no es fiable)."""
     dec = matches.decode_positions(mi)
+    # Índice de muestra = segundo / interval_s (no siempre 1 s por muestra); ventana T_INI..T_FIN en segundos.
+    iv = dec.get("interval_s") or 1
+    i0, i1 = int(math.ceil(T_INI / iv)), int(T_FIN // iv)
     raw = {}
     for p in dec["players"]:
-        mx = _mediana(p["x"][T_INI:T_FIN])
-        my = _mediana(p["y"][T_INI:T_FIN])
+        mx = _mediana(p["x"][i0:i1])
+        my = _mediana(p["y"][i0:i1])
         raw[p["slot"]] = (p["team"], None if mx is None or my is None else _lane_of(mx, my, paths))
     for p in mi.get("players") or []:
         raw.setdefault(p["player_slot"], (p.get("team"), None))

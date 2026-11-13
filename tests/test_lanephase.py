@@ -40,6 +40,20 @@ class Lanes(unittest.TestCase):
             for lane in (1, 3, 4):
                 self.assertEqual(len(d[team][lane]), 2)
 
+    def test_window_in_seconds_with_other_interval(self):
+        # Muestras cada 4 s: la ventana 60–300 s son los índices 15–75, no 60–300.
+        mi = copy.deepcopy(self.mi)
+        mi["match_paths"]["interval_s"] = 4
+        for q in mi["match_paths"]["paths"]:
+            for k in ("x_pos", "y_pos", "health"):
+                q[k] = q[k][::4]
+            # fuera de la ventana real (300–1200 s) todos en el mismo sitio: si se leyera mal, no habría 2 y 2
+            for i in range(300 // 4 + 1, 1200 // 4):
+                q["x_pos"][i] = q["y_pos"][i] = 0
+        res = lanes.assign_lanes(mi, self.paths)
+        for acc, lane in ESPERADO.items():
+            self.assertEqual(res[self.slot[acc]], lane, acc)
+
     def test_invalid_when_not_two_and_two(self):
         mi = copy.deepcopy(self.mi)
         paths = mi["match_paths"]["paths"]
