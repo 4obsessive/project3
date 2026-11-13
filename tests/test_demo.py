@@ -285,6 +285,27 @@ class Worker(unittest.TestCase):
         with self.assertRaises(demo.DemoError):
             demo.DemoClient._parse(comp[:-1])
 
+    def test_match_demo_endpoint(self):
+        # GET /api/matches/{id}/demo: solo el estado del demo y las banderas de remontada (para el sondeo de la vista).
+        from unittest import mock
+        from scouting import server
+        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "match_109084310.json"), encoding="utf-8") as f:
+            data = json.load(f)
+        app = server.App(None, None, 0)
+        app.con = lambda: self.con
+        self.assertTrue(any(m == "GET" and p.match("/api/matches/109084310/demo") for m, p, _ in app.routes))
+        with mock.patch.object(matches, "load", return_value=data):
+            out = app.match_demo(None, "109084310")
+            self.assertEqual(set(out), {"demo", "comeback"})
+            self.assertEqual(out["demo"]["state"], "pending")
+            self.assertIsNone(out["comeback"])
+            with self.con:
+                self.con.execute("INSERT INTO demo_jobs(match_id, state, summary, raw, updated_at) VALUES(109084310, 'done', ?, '{}', 0)",
+                                 (json.dumps({"version": demo.SUMMARY_VERSION, "midboss": [], "koth": [{"n": 1, "start_t": 600}]}),))
+            out = app.match_demo(None, "109084310")
+            self.assertEqual(out["demo"]["state"], "done")
+            self.assertEqual(out["comeback"]["koth"], [matches.comeback_team_at(data["match_info"], 600)])
+
     def test_nodemo_404_not_retried(self):
         w = self.mk("404")
         demo.enqueue(self.con, 7)

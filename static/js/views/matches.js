@@ -101,20 +101,36 @@ async function showMatch(root, id, ctx) {
   });
   body.setAttribute('aria-labelledby', 'tab-' + current.toLowerCase());
   views[current]();
-  scheduleDemoRefresh(root, id, ctx, m);
+  // al terminar el demo solo se repinta la pestaña abierta si depende de él (Objetivos: KOTH; Midboss)
+  scheduleDemoRefresh(root, id, gen, m, () => {
+    if (!DEMO_TABS.has(current)) return;
+    body.innerHTML = ''; views[current]();
+  });
 }
 
 let heroById = new Map();
 let demoTimer = null;
 let matchGen = 0;
-/** Mientras el demo está pendiente, recarga la vista cada 20 s; se detiene al salir de la partida. */
-function scheduleDemoRefresh(root, id, ctx, m) {
+const DEMO_TABS = new Set(['Objetivos', 'Midboss']);
+/** Mientras el demo está pendiente, consulta en segundo plano /api/matches/{id}/demo cada 20 s (sin repintar);
+ *  cuando deja de estar pendiente actualiza m.demo/m.comeback y llama a onReady. Se detiene al salir de la partida. */
+function scheduleDemoRefresh(root, id, gen, m, onReady) {
   clearTimeout(demoTimer); demoTimer = null;
   if (m.demo?.state !== 'pending') return;
-  demoTimer = setTimeout(() => {
+  const still = () => gen === matchGen && root.isConnected
+    && location.hash.slice(1).split(/[/?]/)[0] === 'partidas' && location.hash.slice(1).split(/[/?]/)[1] === String(id);
+  demoTimer = setTimeout(async () => {
     demoTimer = null;
-    if (!root.isConnected || (location.hash.slice(1).split(/[/?]/)[0] !== 'partidas' || location.hash.slice(1).split(/[/?]/)[1] !== String(id))) return;
-    showMatch(root, id, ctx);
+    if (!still()) return;
+    let r = null;
+    try { r = await api.get(`/api/matches/${id}/demo`); } catch { /* fallo de red: se reintenta en el siguiente ciclo */ }
+    if (!still()) return;
+    if (r && r.demo?.state !== 'pending') {
+      m.demo = r.demo; m.comeback = r.comeback;
+      onReady();
+      return;
+    }
+    scheduleDemoRefresh(root, id, gen, m, onReady);
   }, 20000);
 }
 /** Retrato del héroe de un jugador de la partida (con los datos de /api/heroes si hay). */
@@ -311,7 +327,10 @@ function demoStatus(demo) {
 
 const demoDone = m => m.demo?.state === 'done';
 const teamTag = (t, tname) => t == null ? el('span', { class: 'muted' }, '–') : el('span', { class: `tag t${t}` }, tname(t));
-const comebackTag = (team, tname) => team == null ? null : el('span', { class: `tag comeback t${team}`, title: 'Regla del 10 %: net worth < 0,9 × el del rival' }, `en remontada: ${tname(team)}`);
+/** Remontada en el momento: 0/1 = ese equipo; -1 = ninguno (no se marca); null = sin muestras de net worth. */
+const comebackTag = (team, tname) => team === -1 ? null
+  : team == null ? el('span', { class: 'tag comeback muted', title: 'Sin muestras de net worth para aplicar la regla del 10 %' }, 'remontada: —')
+  : el('span', { class: `tag comeback t${team}`, title: 'Regla del 10 %: net worth (interpolado) < 0,9 × el del rival' }, `en remontada: ${tname(team)}`);
 
 function kothCard(m, tname) {
   const d = demoDone(m) ? m.demo : null;
@@ -342,6 +361,8 @@ function rejuvIcons(rejuv, tname) {
 }
 
 function dmgBar(damage, tname) {
+  // sin daño capturado (Midboss visto solo por los rejuvenators): dato ausente, no 0
+  if (damage == null) return el('div', { class: 'dmg-duo' }, el('div', { class: 'small muted' }, 'Daño: no disponible'));
   const d0 = (damage && damage[0]) || 0, d1 = (damage && damage[1]) || 0, tot = d0 + d1;
   return el('div', { class: 'dmg-duo' },
     el('div', { class: 'dmg-bar', 'aria-hidden': 'true' },

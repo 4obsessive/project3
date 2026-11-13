@@ -110,6 +110,7 @@ class App:
         r("POST", r"/api/matches/load", self.match_load)
         r("POST", r"/api/matches/upload", self.match_upload)
         r("GET", r"/api/matches/(\d+)", self.match_overview)
+        r("GET", r"/api/matches/(\d+)/demo", self.match_demo)
         r("GET", r"/api/matches/(\d+)/positions", self.match_positions)
         r("GET", r"/api/matches/(\d+)/raw", self.match_raw)
         r("POST", r"/api/matches/(\d+)/delete", self.match_delete)
@@ -334,9 +335,17 @@ class App:
             r = con.execute("SELECT p.id, COALESCE(p.display_name, a.steam_name) n FROM accounts a JOIN players p ON p.id=a.player_id WHERE a.account_id=?", (p["account_id"],)).fetchone()
             p["player_id"], p["name"] = (r["id"], r["n"]) if r else (None, None)
             names[p["slot"]] = p["name"]
-        out["demo"] = demo.summary(con, int(mid))
-        out["comeback"] = matches.comeback_flags(d["match_info"], out["demo"])
+        out.update(self._demo_of(con, mid, d["match_info"]))
         return out
+
+    @staticmethod
+    def _demo_of(con, mid, mi):
+        dm = demo.summary(con, int(mid))
+        return {"demo": dm, "comeback": matches.comeback_flags(mi, dm)}
+
+    def match_demo(self, req, mid):
+        """Solo el demo y las banderas de remontada: la vista lo sondea mientras está pendiente."""
+        return self._demo_of(self.con(), mid, self._load(mid)["match_info"])
 
     def match_positions(self, req, mid):
         step = max(1, _qint(req, "step", "1"))
