@@ -66,6 +66,7 @@ Base `https://api.deadlock-api.com` · Docs OpenAPI en `/docs` · API key opcion
 | `GET /v1/assets/map` | Minimapa | **Verificado**: `radius` 10752, imágenes (el PNG `minimap_midtown_mid.png` es la misma imagen que el AVIF del usuario: coincidencia 99,92 %), `objective_positions` (`team0_tier1_1/3/4`, `tier2_…`, `titan`, `core`) y campamentos con posición de mundo **y** relativa → calibración oficial exacta (sección 5). |
 | `GET /v1/assets/generic-data` | Datos varios | `map_districts`: Hidden King = distrito *amber*, Archmother = *sapphire*. No relaciona distrito con equipo 0/1. |
 | `GET /v1/players/{id}/mmr-history` | Historial de MMR | Marcado como obsoleto, ~20 req/min, da puntos y no posición. No usar para climbers. |
+| `POST /v1/matches/demo/query` + `GET /v1/matches/demo/query/{job_id}` | Consultas SQL sobre el demo de una partida | **Verificado (2026-11-12)**. Cuerpo `{match_id, query, format: "ndjson"}`; estados queued/running/done/failed; con `done`, `result_url` en el host **`demo-extracts.deadlock-api.com`** (`.ndjson.zst`, exige `User-Agent`, si no 403). Límite 200/h por IP (la app usa 150/h). Disponible para partidas de oct–nov 2026; 404 «No demo available» en partidas antiguas (p. ej. la 109084310). Tablas sin comillas, **columnas con mayúsculas entre comillas dobles**; `CCitadelGameRulesProxy` con columnas `m_pGameRules__…`. Esquema: `GET /v1/matches/demo/schema?match_id=`. |
 | `GET /v1/matches/{id}/metadata` | Partida completa (~1,3 MB) | **Verificado** con la partida `109084310`. Límite "from S3" 100 req/10 s. |
 
 Statlocker no tiene API pública útil; usa los mismos datos.
@@ -105,13 +106,24 @@ En el mapa actual de 3 carriles faltan 2, 6 y 13 (carril 2). Verificar con más 
 Otros campos útiles verificados en la partida: `players[].stats[]` trae `player_healing`, `teammate_healing`, `self_healing` (la curación sí existe por partida, solo falta en hero-stats); `damage_matrix`; `players[].power_up_buffs[].pickup_times_s`; `players[].assigned_lane`; `match_info.teams[]`, `team_score`, `match_tracked_stats` vienen vacíos.
 
 ### Lo que NO existe en los datos (no inventarlo)
-- **Rifts / KOTH**: ni eventos, ni ganador, ni tiempos. La única pista es la stat "Comeback Gold Koth" (el equipo ganó al menos uno yendo por detrás), que no es un recuento.
-- **Cristales del Midboss**, quién lo inicia, intentos fallidos.
+- **Rifts / KOTH en los metadatos**: ni eventos, ni ganador, ni tiempos; el cash-in solo sale del demo (sección «Datos del demo»). Sin demo: «no disponible».
+- **Cristales del Midboss** e intentos fallidos (quién lo inicia sí se obtiene del daño en el demo).
 - **Curación** por héroe en hero-stats.
 - Que el equipo 0 sea Hidden King y el 1 Archmother lo dice una fuente de terceros: **verificarlo**.
   - **Comprobado (2026-11-12):** el equipo 0 tiene la base **abajo** del minimapa (spawn de sus 6 jugadores en y ≈ −10 100 y `team0_core` en `top_relative` 0,92). `generic-data` dice que Hidden King es el distrito *amber* y Archmother *sapphire*, pero **ningún endpoint relaciona amber/sapphire con 0/1**. Sigue siendo de terceros; la app lo muestra con esa advertencia.
 
 ---
+
+### Datos del demo (verificado el 2026-11-12, partida 135801973)
+
+- **Tick → segundo**: `(tick − ticks en pausa) / 64`; cuadra con los dos midboss de los metadatos (1198 y 1642 s).
+- **Equipos del demo**: 2 (Amber, Hidden King) → equipo 0 de la API; 3 (Sapphire, Archmother) → equipo 1.
+- **Midboss** = `DamageEvent.victim_class = 8`; el equipo del atacante sale de `CCitadelPlayerPawn.m_iTeamNum`. Inicia el de más daño; «robado» = lo mata el otro.
+- **Rejuvenators**: `RejuvStatusEvent` con `event_type = 4` (3 filas por midboss). Los tipos 5 y 6 no se usan (sin confirmar).
+- **KOTH**: transiciones de `m_nKothScoringTeam`, `m_timeKothScoring`, `m_timeKothCashInStarted`, `m_timeKothGiveUp` (infinito ~3,4e38 mientras sigue abierto).
+- **Economía**: `GoldHistoryEvent` viene **vacío** y `CurrencyChangedEvent` usa otra numeración (39 códigos) sin documentar, así que el desglose por fuente y los ritmos por minuto salen de las muestras `stats` de los metadatos (`gold_sources`, `net_worth`), no del demo.
+- **Fuentes de almas** (`gold_sources[].source`): 1 Kills, 2 Troopers, 3 Jungla, 4 Objetivos, 6 Asistencias, 7 Denies, 11 Cultist Sacrifice, 12 Rompibles (verificadas con datos); 5 Tesoro, 8 Catch-up de equipo, 9 Asesinato por habilidad, 10/13 objetos: según el esquema de la API, sin confirmar. «Haunts» (captura del usuario) no tiene correspondencia: no se inventa.
+- **Remontada**: equipo con almas < 0,9 × las del rival (regla del 10 %), con net worth interpolado de los metadatos.
 
 ## 5. Minimapa
 
@@ -207,16 +219,19 @@ Analizar **N partidas de un equipo en conjunto** (ej. 20 de Buff Enjoyers), indi
 
 ---
 
-## 12. Estado (2026-11-12)
+## 12. Estado (2026-11-13)
 
 Construido desde cero siguiendo el plan de la sección 11. Ver `README.md` para arrancar (`python app.py`) y la estructura.
 
 - **Hecho y probado en vivo**: actualización completa de Europa (temporada actual 1002 + Beta Season 1 → 1010 jugadores, ~12 min la primera vez, casi todo por el límite de `/players/rank`; las siguientes reutilizan la resolución de cuentas cacheada), vista de jugadores, por héroe, perfil con tendencias y dúos reales, partidas por ID, minimapa, explorador, informe de 12 partidas reales (lado detectado solo en las 12), recalibración con 13 partidas.
-- **Tests**: 24 (`python -m unittest discover -s tests`), sin red: decodificación de `match_paths` contra posiciones de muerte, filtrado de muertos, spawn del equipo 0 abajo, mapeo de objetivos, Midboss, detección de lado, todas las métricas, fallo aislado de una métrica, actualizador con cliente falso (resolución de cuentas, reanudación tras corte, campos manuales que sobreviven, fusión de cuentas, climbers).
+- **Tests**: 100 (`python -m unittest discover -s tests`), sin red: decodificación de `match_paths` contra posiciones de muerte, filtrado de muertos, spawn del equipo 0 abajo, mapeo de objetivos, Midboss, detección de lado, todas las métricas, fallo aislado de una métrica, actualizador con cliente falso (resolución de cuentas, reanudación tras corte, campos manuales que sobreviven, fusión de cuentas, climbers).
 - **Decisiones tomadas por defecto** (cambiables):
   - Además de la temporada actual se descarga la Beta Season 1 (`extra_leaderboard_ids: [1001]` en `config.json`), porque la actual solo tiene 61 jugadores en Europa. Climbers usa solo la temporada actual.
   - Calico está en **Initiator** (`roles.json`), confirmado por el usuario el 2026-11-12.
   - Interfaz en español.
   - Los snapshots importados de un `scouting.db` antiguo se asignan a la temporada cuyo intervalo contiene su fecha. El importador es *best-effort*: no se conoce el esquema antiguo; usar «Simular» primero.
 - **Imágenes y carriles (rama `feat/imagenes-wiki`)**: retratos, objetivos y minimapa usan el proxy-caché `/img/` (wiki + assets de la API, caché en `data/cache/img/`). Los carriles tienen identidad York/Broadway/Greenwich con su color (editable en `objetivos.json`). Urn (Soul Urn) aplazada. KOTH: solo puntos en el mapa (`unstable_rifts`) y «no disponible» para los cash-in. Equipo 0 = Hidden King ya no depende solo de terceros: la wiki (página de Cursed Apple) sitúa Chinatown a la derecha del Hidden King y en nuestro minimapa el campamento neutral de la campana de Chinatown (`/v1/assets/map` `neutral_camps`, left_relative 0.65, top 0.59) queda a la derecha de la mitad del equipo 0.
-- **Pendiente / no verificado**: equipo 0 = Hidden King apoyado en esa pista y en fuentes de terceros; `team_claimed` del Midboss sigue sin documentar; mapeo de objetivos coherente pero inferido. Climbers necesita al menos dos snapshots separados en el tiempo (se acumulan desde hoy).
+- **Datos del demo, economía y estilo (rama `feat/demo-datos`)**: cola en segundo plano (`scouting/demo.py`) que al guardar una partida (y al arrancar, las guardadas sin fila) lanza 3 consultas SQL al demo; estados `pending/done/nodemo/error/unavailable`, presupuesto de 150/h persistido en la base (kv), tras 429 espera ≥ 61 s, reintentos a 600 s × intento hasta 5. Requiere Python 3.14+ (`compression.zstd`); con menos, «no disponible: requiere Python 3.14+» y no arranca el trabajador (tests del demo saltados). Estado en `GET /api/demo/status`. Nuevo host de salida: `demo-extracts.deadlock-api.com` (junto a `cdn.deadlock.wiki` y `assets-bucket.deadlock-api.com`). Midboss con rejuvenators y daño, KOTH cash-in, economía por fuente y por fase (`GOLD_SOURCES`, `economy` en `matches.py`), remontada (`comeback_team_at`, `comeback_flags`, regla 0,9) y mapas que resaltan las zonas de cada tabla del informe.
+- **Interpretaciones eliminadas** (decisión del usuario, 2026-11-12): «robo» por `team_claimed` (`stolen`), contexto del Midboss por margen de net worth, MVP «estimado», lectura de Comeback Gold Koth, conclusiones `confirmed=False` y el tipo/tono «interpretación» (`m99`, `blocks.js`). Quedan hechos y recuentos; lo que falta, «no disponible». Se mantienen la detección del lado y el mapeo de objetivos.
+- **Estilo «City Never Sleeps»** (tokens en `static/app.css`): `--bg #1a1310`, `--panel #251b16`, `--text #f3e6cf`, `--accent #e0612a` (naranja), `--teal #3fb8a8`, `--frame #e9dcc3`; tipografía de sistema (Bahnschrift/Arial Black), sin fuentes externas ni arte de Valve; carriles y equipos con sus colores.
+- **Pendiente / no verificado**: equipo 0 = Hidden King apoyado en esa pista y en fuentes de terceros; `team_claimed` del Midboss sigue sin documentar (ya no se interpreta); fuentes de almas 5/8/10/13 sin confirmar y «Haunts» sin correspondencia; mapeo de objetivos coherente pero inferido. Climbers necesita al menos dos snapshots separados en el tiempo (se acumulan desde hoy).
