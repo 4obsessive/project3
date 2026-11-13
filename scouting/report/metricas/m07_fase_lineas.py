@@ -1,5 +1,5 @@
 """Fase de líneas (min 0–10): dúos por línea, daño, Guardians y primer gankeo. Los números salen de cada partida
-(lanephase.lane_phase), igual que en la vista de partida; el daño solo promedia partidas con demo."""
+(lanephase.lane_phase), igual que en la vista de partida; el daño y el primer gankeo solo usan partidas con demo."""
 from collections import Counter, defaultdict
 
 from .. import metric
@@ -87,11 +87,16 @@ def fase_lineas(ctx):
                                    {"key": "g_taken", "label": "Guardian rival cae", "fmt": "mmss"}, {"key": "g_taken_no", "label": "Rival no cae en"},
                                    {"key": "g_lost", "label": "Guardian propio cae", "fmt": "mmss"}, {"key": "g_lost_no", "label": "Propio no cae en"}],
                        "rows": rows})
-    # primer gankeo por línea
+    # primer gankeo por línea: los gankeos necesitan el demo, así que solo cuentan las partidas con demo
+    if not demo_n:
+        blocks.append({"type": "unavailable", "title": "Primer gankeo por línea",
+                       "reason": "Los gankeos necesitan el demo de fase de líneas y ninguna partida lo tiene: no disponible."})
+        return blocks
     grows = []
     for lane in sorted(lane_m):
         suf, mad, suf_h, mad_h = [], [], Counter(), Counter()
-        for mine, theirs, hero_of, _ in lane_m[lane]:
+        con_demo = [x for x in lane_m[lane] if x[3]]
+        for mine, theirs, hero_of, _ in con_demo:
             s, g = mine.get("first_gank_suffered"), mine.get("first_gank_made")
             if s:
                 suf.append(s["t"])
@@ -99,7 +104,7 @@ def fase_lineas(ctx):
             if g:
                 mad.append(g["t"])
                 mad_h[hero_of.get(g["attacker_slot"])] += 1
-        N = len(lane_m[lane])
+        N = len(con_demo)
         grows.append({"carril_id": lane, "n": N, "suf_n": len(suf), "suf_mean": _sec(_mean(suf)), "suf_min": min(suf) if suf else None,
                       "suf_heroes": _top(suf_h, ctx), "made_n": len(mad), "made_mean": _sec(_mean(mad)),
                       "made_min": min(mad) if mad else None, "made_heroes": _top(mad_h, ctx)})
@@ -107,8 +112,9 @@ def fase_lineas(ctx):
             ctx.finding("weakness", f"Sufren un gankeo en {ln(lane)} (primero, tras el min 1) en {len(suf)} de {N} partidas.", len(suf), N)
         if N >= 3 and len(mad) / N >= 0.5:
             ctx.finding("strength", f"Gankean en {ln(lane)} (primero, tras el min 1) en {len(mad)} de {N} partidas.", len(mad), N)
-    blocks.append({"type": "table", "kind": "ganks", "title": "Primer gankeo por línea", "n": valid,
-                   "note": "Gankeo = daño o kill sobre un jugador de otra línea tras el min 1. Momento medio y mínimo de las partidas en que ocurre; "
+    blocks.append({"type": "table", "kind": "ganks", "title": "Primer gankeo por línea", "n": demo_n,
+                   "note": f"Gankeo = daño o kill sobre un jugador de otra línea tras el min 1. Cuenta solo partidas con demo ({demo_n} de {valid} con líneas válidas): "
+                           "sin demo los gankeos no están disponibles. Momento medio y mínimo de las partidas en que ocurre; "
                            "los héroes son los que lo hacen más veces.",
                    "columns": [{"key": "carril_id", "label": "Línea", "fmt": "lane"}, {"key": "n", "label": "Partidas"},
                                {"key": "suf_n", "label": "Lo sufren (partidas)"}, {"key": "suf_mean", "label": "Momento medio", "fmt": "mmss"}, {"key": "suf_min", "label": "Momento mínimo", "fmt": "mmss"},

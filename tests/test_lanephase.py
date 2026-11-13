@@ -426,6 +426,41 @@ class ReportLanes(unittest.TestCase):
     def test_json_serializable(self):
         json.dumps(self.out)
 
+    def _mixed(self, n_demo, n_aprox):
+        from scouting import report
+        datas, ld = [], {}
+        for i in range(n_demo + n_aprox):
+            mi = copy.deepcopy(self.mi)
+            mi["match_id"] = self.MID + i
+            datas.append({"match_info": mi})
+            if i < n_demo:
+                ld[mi["match_id"]] = {"rows": self.rows, "rules": self.rules}
+        out = report.run("T", datas, self.roster, None, None, None, lane_data=ld)
+        self.mixed_out = out
+        return {s["id"]: s for s in out["sections"]}["fase_lineas"]
+
+    def test_gank_table_only_demo_matches(self):
+        sec = self._mixed(3, 2)
+        t = next(b for b in sec["blocks"] if b.get("kind") == "ganks")
+        self.assertEqual(t["n"], 3)
+        self.assertIn("solo partidas con demo", t["note"])
+        for r in t["rows"]:
+            self.assertEqual(r["n"], 3)
+            ref = self.lp["lanes"][str(r["carril_id"])]["1"]
+            self.assertEqual(r["suf_n"], 3 if ref["first_gank_suffered"] else 0)
+            self.assertEqual(r["made_n"], 3 if ref["first_gank_made"] else 0)
+        # hallazgos sobre las 3 partidas con demo, no sobre las 5
+        import re
+        found = re.findall(r"[Gg]ank\w* en [^.]*?en (\d+) de (\d+) partidas", json.dumps(self.mixed_out, ensure_ascii=False))
+        self.assertTrue(found)
+        for _, total in found:
+            self.assertEqual(total, "3")
+
+    def test_gank_table_unavailable_without_demo(self):
+        sec = self._mixed(0, 2)
+        self.assertFalse(any(b.get("kind") == "ganks" for b in sec["blocks"]))
+        self.assertTrue(any(b.get("type") == "unavailable" and "gankeo" in b.get("title", "").lower() for b in sec["blocks"]))
+
 
 class LanePhaseFallbacks(unittest.TestCase):
     """Demo incompleto (límite de tick por debajo de 600 s de juego) o sin filas utilizables → aprox, nunca ceros."""
